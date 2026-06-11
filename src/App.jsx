@@ -38,6 +38,7 @@ const INCOME_CATEGORIES = [
   { id:"load_revenue", label:"Load Related Revenue", subs:[
     {id:"linehaul",label:"Linehaul",desc:"Base pay for hauling the load from origin to destination."},
     {id:"fuel_surcharge",label:"Fuel Surcharge",desc:"Per-mile or flat fuel cost recovery added to the load rate."},
+    {id:"market_surcharge",label:"Market Surcharge",desc:"Additional charge applied to a load rate based on current market conditions, lane demand, or capacity constraints."},
     {id:"detention",label:"Detention",desc:"Hourly pay when waiting at shipper/receiver beyond free time (usually 2 hrs)."},
     {id:"layover",label:"Layover",desc:"Compensation for being held at a facility overnight or for an extended period."},
     {id:"tonu",label:"TONU",desc:"Truck Ordered Not Used — flat fee paid when a load is cancelled after you've committed."},
