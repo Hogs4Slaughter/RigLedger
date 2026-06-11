@@ -640,7 +640,7 @@ function LoadForm({load,onChange,profile,allLoads}) {
       <Card style={{marginBottom:14}}>
         <SecHdr title="Assignment"/>
         <Row2>
-          <Field label="Fleet"><select value={load.fleetId} onChange={e=>up("fleetId",e.target.value)}>{profile.fleets.map(f=><option key={f.id} value={f.id}>{f.name}</option>)}</select></Field>
+          <Field label="Company"><input value={load.company||profile.companyName||""} onChange={e=>up("company",e.target.value)} placeholder={profile.companyName||"Company name"}/></Field>
           <Field label="Driver"><select value={load.driverId} onChange={e=>up("driverId",e.target.value)}>{profile.drivers.map(d=><option key={d.id} value={d.id}>{d.name||"(unnamed)"}</option>)}</select></Field>
         </Row2>
         <Row2>
@@ -977,7 +977,7 @@ function LedgerTab({entries,setEntries,loads,profile,fuelEntries,setFuelEntries}
           </select>
         </Field>
         <Row2>
-          <Field label="Fleet"><select value={editEntry.fleetId} onChange={e=>setEditEntry(x=>({...x,fleetId:e.target.value}))}>{profile.fleets.map(f=><option key={f.id} value={f.id}>{f.name}</option>)}</select></Field>
+          <Field label="Company"><input value={editEntry.company||profile.companyName||""} onChange={e=>setEditEntry(x=>({...x,company:e.target.value}))} placeholder={profile.companyName||"Company name"}/></Field>
           <Field label="Assign To">
             <select value={editEntry.unitId} onChange={e=>setEditEntry(x=>({...x,unitId:e.target.value}))}>
               <option value="office">Office / Operations</option>
@@ -1335,7 +1335,7 @@ function DashboardTab({loads,entries,fuelEntries,maintenance,profile}) {
   return (
     <div style={{padding:"16px 0"}}>
 
-      {/* Fleet selector dropdown */}
+      {/* View selector dropdown */}
       <Card style={{marginBottom:14,padding:"12px 14px"}}>
         <label>Viewing</label>
         <select
@@ -1343,33 +1343,13 @@ function DashboardTab({loads,entries,fuelEntries,maintenance,profile}) {
           onChange={e=>{
             const val=e.target.value;
             if(val==="all"){setSelectedUnits(["all"]);}
-            else{
-              setSelectedUnits(prev=>{
-                if(prev.includes("all"))return[val];
-                if(prev.includes(val)&&prev.length===1)return["all"];
-                if(prev.includes(val))return prev.filter(x=>x!==val);
-                return[...prev.filter(x=>x!=="all"),val];
-              });
-            }
+            else{setSelectedUnits([val]);}
           }}
-          style={{marginBottom:6}}
+          style={{marginBottom:0}}
         >
-          <option value="all">Entire Fleet</option>
-          {[...profile.units].sort((a,b)=>(a.identifier||a.make||"").localeCompare(b.identifier||b.make||"",undefined,{numeric:true})).map(u=><option key={u.id} value={u.id}>{u.identifier||u.make||u.id}</option>)}
+          <option value="all">Company</option>
+          {[...profile.units].sort((a,b)=>(a.identifier||a.make||"").localeCompare(b.identifier||b.make||"",undefined,{numeric:true})).map(u=><option key={u.id} value={u.id}>Unit {u.identifier||u.make||u.id}</option>)}
         </select>
-        {/* Multi-select chip row */}
-        {!selectedUnits.includes("all")&&profile.units.length>1&&(
-          <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:8}}>
-            {[...profile.units].sort((a,b)=>(a.identifier||a.make||"").localeCompare(b.identifier||b.make||"",undefined,{numeric:true})).map(u=>(
-              <button key={u.id} onClick={()=>toggleUnit(u.id)} style={{padding:"4px 12px",borderRadius:20,fontSize:11,fontWeight:600,background:selectedUnits.includes(u.id)?T.accent:T.surface,color:selectedUnits.includes(u.id)?"#fff":T.muted,border:`1px solid ${selectedUnits.includes(u.id)?T.accent:T.border}`}}>
-                {u.identifier||u.make||"Unit"}
-              </button>
-            ))}
-          </div>
-        )}
-        <div style={{fontSize:10,color:T.muted,marginTop:6}}>
-          {selectedUnits.includes("all")?`All ${profile.units.length} unit(s)`:`${selectedUnits.length} unit(s) selected — tap chips above to toggle`}
-        </div>
       </Card>
 
       {/* Period selector */}
