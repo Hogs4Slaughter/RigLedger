@@ -1777,41 +1777,20 @@ ${summaryRows.length>0?`<div class="summary">${summaryRows.map(([l,v])=>`<div cl
 
 // ── AUTH SCREEN ───────────────────────────────────────────────────────────────
 function AuthScreen() {
-  const [mode,setMode]=useState("email"); // "email" | "phone"
-  const [step,setStep]=useState("input"); // "input" | "otp"
-  const [value,setValue]=useState("");
-  const [otp,setOtp]=useState("");
+  const [email,setEmail]=useState("");
   const [loading,setLoading]=useState(false);
   const [error,setError]=useState("");
   const [sent,setSent]=useState(false);
 
-  const sendCode=async()=>{
+  const sendLink=async()=>{
     setLoading(true);setError("");
-    let err;
-    if(mode==="email"){
-      ({error:err}=await supabase.auth.signInWithOtp({email:value.trim(),options:{shouldCreateUser:true}}));
-    } else {
-      let ph=value.trim();
-      if(!ph.startsWith("+"))ph="+1"+ph.replace(/\D/g,"");
-      ({error:err}=await supabase.auth.signInWithOtp({phone:ph,options:{shouldCreateUser:true}}));
-    }
+    const {error:err}=await supabase.auth.signInWithOtp({
+      email:email.trim(),
+      options:{shouldCreateUser:true,emailRedirectTo:"https://rigledger.vercel.app"}
+    });
     setLoading(false);
     if(err){setError(err.message);return;}
-    setSent(true);setStep("otp");
-  };
-
-  const verifyCode=async()=>{
-    setLoading(true);setError("");
-    let err;
-    if(mode==="email"){
-      ({error:err}=await supabase.auth.verifyOtp({email:value.trim(),token:otp.trim(),type:"email"}));
-    } else {
-      let ph=value.trim();
-      if(!ph.startsWith("+"))ph="+1"+ph.replace(/\D/g,"");
-      ({error:err}=await supabase.auth.verifyOtp({phone:ph,token:otp.trim(),type:"sms"}));
-    }
-    setLoading(false);
-    if(err)setError(err.message);
+    setSent(true);
   };
 
   return (
@@ -1823,58 +1802,35 @@ function AuthScreen() {
           <div style={{fontWeight:700,fontSize:18,color:T.text,marginBottom:6}}>Sign In</div>
           <div style={{fontSize:13,color:T.muted,marginBottom:20}}>Your data syncs across all your devices.</div>
 
-          {step==="input"&&(
+          {!sent?(
             <>
-              <div style={{display:"flex",gap:0,marginBottom:16,borderRadius:8,overflow:"hidden",border:`1px solid ${T.border}`}}>
-                {["email","phone"].map(m=>(
-                  <button key={m} onClick={()=>{setMode(m);setError("");}} style={{flex:1,padding:"10px 0",fontSize:13,fontWeight:600,background:mode===m?T.accent:"transparent",color:mode===m?"#fff":T.muted,border:"none",cursor:"pointer",textTransform:"capitalize"}}>
-                    {m==="email"?"📧 Email":"📱 Phone"}
-                  </button>
-                ))}
-              </div>
-              <Field label={mode==="email"?"Email Address":"Phone Number (US)"}>
+              <Field label="Email Address">
                 <input
-                  type={mode==="email"?"email":"tel"}
-                  value={value}
-                  onChange={e=>setValue(e.target.value)}
-                  placeholder={mode==="email"?"you@example.com":"(555) 000-0000"}
-                  onKeyDown={e=>e.key==="Enter"&&sendCode()}
+                  type="email"
+                  value={email}
+                  onChange={e=>setEmail(e.target.value)}
+                  placeholder="you@example.com"
+                  onKeyDown={e=>e.key==="Enter"&&sendLink()}
                   autoFocus
                 />
               </Field>
               {error&&<div style={{color:T.red,fontSize:12,marginTop:8}}>{error}</div>}
-              <Btn onClick={sendCode} disabled={loading||!value.trim()} style={{width:"100%",marginTop:16,padding:"12px 0",fontSize:14,justifyContent:"center"}}>
-                {loading?"Sending…":"Send Code"}
+              <Btn onClick={sendLink} disabled={loading||!email.trim()} style={{width:"100%",marginTop:16,padding:"12px 0",fontSize:14,justifyContent:"center"}}>
+                {loading?"Sending…":"Send Sign-In Link"}
               </Btn>
             </>
-          )}
-
-          {step==="otp"&&(
-            <>
-              <div style={{fontSize:13,color:T.muted,marginBottom:16}}>
-                Code sent to <strong style={{color:T.text}}>{value}</strong>.{" "}
-                <button onClick={()=>{setStep("input");setSent(false);setOtp("");setError("");}} style={{background:"none",color:T.accent,fontSize:13,padding:0,cursor:"pointer"}}>Change</button>
+          ):(
+            <div style={{textAlign:"center",padding:"8px 0"}}>
+              <div style={{fontSize:36,marginBottom:12}}>📧</div>
+              <div style={{fontWeight:700,fontSize:16,color:T.text,marginBottom:8}}>Check your email</div>
+              <div style={{fontSize:13,color:T.muted,marginBottom:20,lineHeight:1.6}}>
+                We sent a sign-in link to <strong style={{color:T.text}}>{email}</strong>.<br/>
+                Click the link in the email to sign in.
               </div>
-              <Field label="Verification Code">
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  value={otp}
-                  onChange={e=>setOtp(e.target.value)}
-                  placeholder="6-digit code"
-                  maxLength={6}
-                  onKeyDown={e=>e.key==="Enter"&&verifyCode()}
-                  autoFocus
-                />
-              </Field>
-              {error&&<div style={{color:T.red,fontSize:12,marginTop:8}}>{error}</div>}
-              <Btn onClick={verifyCode} disabled={loading||otp.length<6} style={{width:"100%",marginTop:16,padding:"12px 0",fontSize:14,justifyContent:"center"}}>
-                {loading?"Verifying…":"Sign In"}
-              </Btn>
-              <button onClick={sendCode} disabled={loading} style={{width:"100%",marginTop:10,background:"none",color:T.muted,fontSize:12,cursor:"pointer",padding:"6px 0"}}>
-                Resend code
+              <button onClick={()=>{setSent(false);setError("");}} style={{background:"none",color:T.accent,fontSize:13,cursor:"pointer",padding:0}}>
+                Use a different email
               </button>
-            </>
+            </div>
           )}
         </div>
         <div style={{fontSize:11,color:T.muted,marginTop:20,textAlign:"center"}}>
