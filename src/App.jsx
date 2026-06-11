@@ -1,7 +1,8 @@
 ﻿import { useState, useEffect, useRef, useCallback } from "react";
 import { PieChart, Pie, Cell, BarChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend } from "recharts";
+import { supabase } from "./supabase.js";
 
-// ── STORAGE ───────────────────────────────────────────────────────────────────
+// ── STORAGE (local fallback only) ─────────────────────────────────────────────
 const save = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch(e){} };
 const load = (k, d) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch(e){ return d; } };
 
@@ -886,7 +887,7 @@ function LedgerTab({entries,setEntries,loads,profile,fuelEntries,setFuelEntries}
 
   const openNew=type=>{
     const last=type==="expense"?lastExp:lastInc;
-    setEditEntry({...blank(type),fleetId:last?.fleetId||profile.fleets[0]?.id||"",driverId:last?.driverId||profile.drivers[0]?.id||""});
+    setEditEntry({...blank(type),fleetId:last?.fleetId||profile.fleets[0]?.id||"",unitId:type==="expense"?(last?.unitId||"office"):""});
     setShowForm(true);
   };
 
@@ -976,8 +977,7 @@ function LedgerTab({entries,setEntries,loads,profile,fuelEntries,setFuelEntries}
           <Field label="Assign To">
             <select value={editEntry.unitId} onChange={e=>setEditEntry(x=>({...x,unitId:e.target.value}))}>
               <option value="office">Office / Operations</option>
-              {profile.units.map(u=><option key={u.id} value={u.id}>Unit: {u.identifier||u.id}</option>)}
-              {profile.drivers.map(d=><option key={d.id} value={d.id}>Driver: {d.name||d.id}</option>)}
+              {profile.units.map(u=><option key={u.id} value={u.id}>Unit {u.identifier||u.id}</option>)}
             </select>
           </Field>
         </Row2>
@@ -1024,10 +1024,7 @@ function LedgerTab({entries,setEntries,loads,profile,fuelEntries,setFuelEntries}
       {allEntries.length===0&&<div style={{textAlign:"center",padding:"48px 0",color:T.muted}}><div style={{fontSize:36,marginBottom:10}}>{tab==="income"?"💵":"💳"}</div><div style={{fontWeight:600}}>No {tab} entries yet</div></div>}
 
       {allEntries.map(e=>(
-        <Card key={e.id} style={{marginBottom:8,cursor:"pointer"}} onClick={()=>{
-          if(e.type==="fuel"){setEditFuel({...e});setShowFuelForm(true);}
-          else{setEditEntry({...e});setShowForm(true);}
-        }}>
+        <Card key={e.id} style={{marginBottom:8}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
             <div style={{flex:1,minWidth:0}}>
               <div style={{fontWeight:600,fontSize:13}}>{getCatLabel(e)}</div>
@@ -1039,8 +1036,14 @@ function LedgerTab({entries,setEntries,loads,profile,fuelEntries,setFuelEntries}
                 {(e.attachments||[]).length>0&&<span style={{fontSize:10,color:T.muted}}>📎 {e.attachments.length}</span>}
               </div>
             </div>
-            <div style={{fontWeight:700,fontSize:16,color:e.type==="income"?T.green:T.red,marginLeft:10}}>
-              {e.type==="income"?"+":"-"}{fmt$(e.type==="fuel"?fuelTotal(e):e.amount)}
+            <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:6,marginLeft:10}}>
+              <div style={{fontWeight:700,fontSize:16,color:e.type==="income"?T.green:T.red}}>
+                {e.type==="income"?"+":"-"}{fmt$(e.type==="fuel"?fuelTotal(e):e.amount)}
+              </div>
+              <div style={{display:"flex",gap:6}}>
+                <button onClick={()=>{if(e.type==="fuel"){setEditFuel({...e});setShowFuelForm(true);}else{setEditEntry({...e});setShowForm(true);}}} style={{fontSize:11,padding:"2px 10px",borderRadius:4,border:`1px solid ${T.accent}`,background:"transparent",color:T.accent,cursor:"pointer"}}>Edit</button>
+                <button onClick={()=>{if(window.confirm("Delete this entry?")){ if(e.type==="fuel")setFuelEntries(es=>es.filter(x=>x.id!==e.id));else setEntries(es=>es.filter(x=>x.id!==e.id));}}} style={{fontSize:11,padding:"2px 10px",borderRadius:4,border:`1px solid ${T.red}`,background:"transparent",color:T.red,cursor:"pointer"}}>Delete</button>
+              </div>
             </div>
           </div>
         </Card>
@@ -1772,20 +1775,271 @@ ${summaryRows.length>0?`<div class="summary">${summaryRows.map(([l,v])=>`<div cl
   );
 }
 
+// ── AUTH SCREEN ───────────────────────────────────────────────────────────────
+function AuthScreen() {
+  const [mode,setMode]=useState("email"); // "email" | "phone"
+  const [step,setStep]=useState("input"); // "input" | "otp"
+  const [value,setValue]=useState("");
+  const [otp,setOtp]=useState("");
+  const [loading,setLoading]=useState(false);
+  const [error,setError]=useState("");
+  const [sent,setSent]=useState(false);
+
+  const sendCode=async()=>{
+    setLoading(true);setError("");
+    let err;
+    if(mode==="email"){
+      ({error:err}=await supabase.auth.signInWithOtp({email:value.trim(),options:{shouldCreateUser:true}}));
+    } else {
+      let ph=value.trim();
+      if(!ph.startsWith("+"))ph="+1"+ph.replace(/\D/g,"");
+      ({error:err}=await supabase.auth.signInWithOtp({phone:ph,options:{shouldCreateUser:true}}));
+    }
+    setLoading(false);
+    if(err){setError(err.message);return;}
+    setSent(true);setStep("otp");
+  };
+
+  const verifyCode=async()=>{
+    setLoading(true);setError("");
+    let err;
+    if(mode==="email"){
+      ({error:err}=await supabase.auth.verifyOtp({email:value.trim(),token:otp.trim(),type:"email"}));
+    } else {
+      let ph=value.trim();
+      if(!ph.startsWith("+"))ph="+1"+ph.replace(/\D/g,"");
+      ({error:err}=await supabase.auth.verifyOtp({phone:ph,token:otp.trim(),type:"sms"}));
+    }
+    setLoading(false);
+    if(err)setError(err.message);
+  };
+
+  return (
+    <>
+      <style>{css}</style>
+      <div style={{maxWidth:480,margin:"0 auto",minHeight:"100vh",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",background:T.bg,padding:"0 24px"}}>
+        <img src={LOGO_URI} alt="The Rig Ledger" style={{height:56,width:"auto",marginBottom:32}}/>
+        <div style={{width:"100%",background:T.surface,borderRadius:12,padding:24,border:`1px solid ${T.border}`}}>
+          <div style={{fontWeight:700,fontSize:18,color:T.text,marginBottom:6}}>Sign In</div>
+          <div style={{fontSize:13,color:T.muted,marginBottom:20}}>Your data syncs across all your devices.</div>
+
+          {step==="input"&&(
+            <>
+              <div style={{display:"flex",gap:0,marginBottom:16,borderRadius:8,overflow:"hidden",border:`1px solid ${T.border}`}}>
+                {["email","phone"].map(m=>(
+                  <button key={m} onClick={()=>{setMode(m);setError("");}} style={{flex:1,padding:"10px 0",fontSize:13,fontWeight:600,background:mode===m?T.accent:"transparent",color:mode===m?"#fff":T.muted,border:"none",cursor:"pointer",textTransform:"capitalize"}}>
+                    {m==="email"?"📧 Email":"📱 Phone"}
+                  </button>
+                ))}
+              </div>
+              <Field label={mode==="email"?"Email Address":"Phone Number (US)"}>
+                <input
+                  type={mode==="email"?"email":"tel"}
+                  value={value}
+                  onChange={e=>setValue(e.target.value)}
+                  placeholder={mode==="email"?"you@example.com":"(555) 000-0000"}
+                  onKeyDown={e=>e.key==="Enter"&&sendCode()}
+                  autoFocus
+                />
+              </Field>
+              {error&&<div style={{color:T.red,fontSize:12,marginTop:8}}>{error}</div>}
+              <Btn onClick={sendCode} disabled={loading||!value.trim()} style={{width:"100%",marginTop:16,padding:"12px 0",fontSize:14,justifyContent:"center"}}>
+                {loading?"Sending…":"Send Code"}
+              </Btn>
+            </>
+          )}
+
+          {step==="otp"&&(
+            <>
+              <div style={{fontSize:13,color:T.muted,marginBottom:16}}>
+                Code sent to <strong style={{color:T.text}}>{value}</strong>.{" "}
+                <button onClick={()=>{setStep("input");setSent(false);setOtp("");setError("");}} style={{background:"none",color:T.accent,fontSize:13,padding:0,cursor:"pointer"}}>Change</button>
+              </div>
+              <Field label="Verification Code">
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  value={otp}
+                  onChange={e=>setOtp(e.target.value)}
+                  placeholder="6-digit code"
+                  maxLength={6}
+                  onKeyDown={e=>e.key==="Enter"&&verifyCode()}
+                  autoFocus
+                />
+              </Field>
+              {error&&<div style={{color:T.red,fontSize:12,marginTop:8}}>{error}</div>}
+              <Btn onClick={verifyCode} disabled={loading||otp.length<6} style={{width:"100%",marginTop:16,padding:"12px 0",fontSize:14,justifyContent:"center"}}>
+                {loading?"Verifying…":"Sign In"}
+              </Btn>
+              <button onClick={sendCode} disabled={loading} style={{width:"100%",marginTop:10,background:"none",color:T.muted,fontSize:12,cursor:"pointer",padding:"6px 0"}}>
+                Resend code
+              </button>
+            </>
+          )}
+        </div>
+        <div style={{fontSize:11,color:T.muted,marginTop:20,textAlign:"center"}}>
+          Your data is private and only accessible with your login.
+        </div>
+      </div>
+    </>
+  );
+}
+
+// ── ONBOARDING SCREEN ─────────────────────────────────────────────────────────
+function OnboardingScreen({onComplete}) {
+  const [profile,setProfile]=useState({...DEF_PROFILE});
+  const [saving,setSaving]=useState(false);
+  const up=(f,v)=>setProfile(p=>({...p,[f]:v}));
+
+  const finish=async()=>{
+    if(!profile.driverName.trim()){alert("Please enter your name.");return;}
+    setSaving(true);
+    const {data:{user}}=await supabase.auth.getUser();
+    if(user){
+      await supabase.from("user_data").upsert({
+        id:user.id,
+        profile:{...profile,onboarded:true},
+        loads:[],entries:[],fuel:[],maintenance:[],
+        updated_at:new Date().toISOString(),
+      });
+    }
+    setSaving(false);
+    onComplete({...profile,onboarded:true});
+  };
+
+  return (
+    <>
+      <style>{css}</style>
+      <div style={{maxWidth:480,margin:"0 auto",minHeight:"100vh",background:T.bg,padding:"24px 16px 40px"}}>
+        <img src={LOGO_URI} alt="The Rig Ledger" style={{height:40,width:"auto",marginBottom:20}}/>
+        <div style={{fontWeight:700,fontSize:20,color:T.text,marginBottom:4}}>Welcome! Let's set up your profile.</div>
+        <div style={{fontSize:13,color:T.muted,marginBottom:24}}>You can update everything later in the Profile tab.</div>
+
+        <Card style={{marginBottom:14}}>
+          <SecHdr title="Your Info"/>
+          <Row2>
+            <Field label="Full Name *"><input value={profile.driverName} onChange={e=>up("driverName",e.target.value)} placeholder="John Smith"/></Field>
+            <Field label="Phone"><input value={profile.phone||""} onChange={e=>up("phone",e.target.value)} placeholder="(555) 000-0000"/></Field>
+          </Row2>
+          <Row2>
+            <Field label="CDL #"><input value={profile.cdl||""} onChange={e=>up("cdl",e.target.value)}/></Field>
+            <Field label="CDL State"><select value={profile.cdlState||"AL"} onChange={e=>up("cdlState",e.target.value)}>{STATES_FULL.map(s=><option key={s.code} value={s.code}>{s.name}</option>)}</select></Field>
+          </Row2>
+        </Card>
+
+        <Card style={{marginBottom:14}}>
+          <SecHdr title="Company / Business"/>
+          <Field label="Company Name"><input value={profile.companyName||""} onChange={e=>up("companyName",e.target.value)} placeholder="Your LLC or DBA name"/></Field>
+          <Row2>
+            <Field label="DOT #"><input value={profile.dot||""} onChange={e=>up("dot",e.target.value)}/></Field>
+            <Field label="MC #"><input value={profile.mc||""} onChange={e=>up("mc",e.target.value)}/></Field>
+          </Row2>
+          <Field label="EIN / SSN (last 4)"><input value={profile.ein||""} onChange={e=>up("ein",e.target.value)} placeholder="EIN or last 4 of SSN"/></Field>
+        </Card>
+
+        <Card style={{marginBottom:24}}>
+          <SecHdr title="Pay Settings"/>
+          <Field label="Pay Period">
+            <select value={profile.payPeriod||"Weekly"} onChange={e=>up("payPeriod",e.target.value)}>
+              {PAY_PERIODS.map(p=><option key={p} value={p}>{p}</option>)}
+            </select>
+          </Field>
+          <Field label="Pay Type">
+            <select value={profile.payType||"per_mile"} onChange={e=>up("payType",e.target.value)}>
+              {PAY_TYPES.map(p=><option key={p.id} value={p.id}>{p.label}</option>)}
+            </select>
+          </Field>
+        </Card>
+
+        <Btn onClick={finish} disabled={saving} style={{width:"100%",padding:"14px 0",fontSize:15,justifyContent:"center"}}>
+          {saving?"Saving…":"Get Started →"}
+        </Btn>
+      </div>
+    </>
+  );
+}
+
 // ── ROOT APP ──────────────────────────────────────────────────────────────────
 export default function RigBooks() {
+  const [session,setSession]=useState(undefined); // undefined=loading, null=logged out, obj=logged in
   const [tab,setTab]=useState("dashboard");
-  const [profile,setProfile]=useState(()=>load("rb_profile",DEF_PROFILE));
-  const [loads,setLoads]=useState(()=>load("rb_loads",[]));
-  const [entries,setEntries]=useState(()=>load("rb_entries",[]));
-  const [fuelEntries,setFuelEntries]=useState(()=>load("rb_fuel",[]));
-  const [maintenance,setMaintenance]=useState(()=>load("rb_maint",[]));
+  const [profile,setProfile]=useState(DEF_PROFILE);
+  const [loads,setLoads]=useState([]);
+  const [entries,setEntries]=useState([]);
+  const [fuelEntries,setFuelEntries]=useState([]);
+  const [maintenance,setMaintenance]=useState([]);
+  const [syncing,setSyncing]=useState(false);
+  const [dataLoaded,setDataLoaded]=useState(false);
+  const saveTimer=useRef(null);
 
-  useEffect(()=>save("rb_profile",profile),[profile]);
-  useEffect(()=>save("rb_loads",loads),[loads]);
-  useEffect(()=>save("rb_entries",entries),[entries]);
-  useEffect(()=>save("rb_fuel",fuelEntries),[fuelEntries]);
-  useEffect(()=>save("rb_maint",maintenance),[maintenance]);
+  // Track auth state
+  useEffect(()=>{
+    supabase.auth.getSession().then(({data:{session}})=>setSession(session));
+    const {data:{subscription}}=supabase.auth.onAuthStateChange((_,s)=>setSession(s));
+    return ()=>subscription.unsubscribe();
+  },[]);
+
+  // Load user data from Supabase when session established
+  useEffect(()=>{
+    if(!session?.user)return;
+    (async()=>{
+      const {data}=await supabase.from("user_data").select("*").eq("id",session.user.id).single();
+      if(data){
+        setProfile(data.profile||DEF_PROFILE);
+        setLoads(data.loads||[]);
+        setEntries(data.entries||[]);
+        setFuelEntries(data.fuel||[]);
+        setMaintenance(data.maintenance||[]);
+      }
+      setDataLoaded(true);
+    })();
+  },[session?.user?.id]);
+
+  // Debounced cloud save whenever any data changes
+  const schedSave=useCallback(()=>{
+    if(!session?.user||!dataLoaded)return;
+    clearTimeout(saveTimer.current);
+    saveTimer.current=setTimeout(async()=>{
+      setSyncing(true);
+      await supabase.from("user_data").upsert({
+        id:session.user.id,
+        profile,loads,entries,fuel:fuelEntries,maintenance,
+        updated_at:new Date().toISOString(),
+      });
+      setSyncing(false);
+    },1500);
+  },[session,dataLoaded,profile,loads,entries,fuelEntries,maintenance]);
+
+  useEffect(()=>{if(dataLoaded)schedSave();},[profile,loads,entries,fuelEntries,maintenance]);
+
+  const signOut=async()=>{await supabase.auth.signOut();setDataLoaded(false);};
+
+  // Loading state
+  if(session===undefined) return (
+    <>
+      <style>{css}</style>
+      <div style={{maxWidth:480,margin:"0 auto",minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:T.bg}}>
+        <div style={{color:T.muted,fontSize:14}}>Loading…</div>
+      </div>
+    </>
+  );
+
+  // Not logged in
+  if(!session) return <AuthScreen/>;
+
+  // Logged in but data still loading
+  if(!dataLoaded) return (
+    <>
+      <style>{css}</style>
+      <div style={{maxWidth:480,margin:"0 auto",minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:T.bg}}>
+        <div style={{color:T.muted,fontSize:14}}>Loading your data…</div>
+      </div>
+    </>
+  );
+
+  // First-time user — show onboarding
+  if(!profile.onboarded) return <OnboardingScreen onComplete={p=>{setProfile(p);setDataLoaded(true);}}/>;
+
 
   const tabs=[
     {id:"dashboard",label:"Dashboard",icon:(active)=>(
@@ -1841,6 +2095,10 @@ export default function RigBooks() {
             <div style={{fontSize:11,color:T.muted,textAlign:"right"}}>
               <div style={{fontWeight:600,color:T.text}}>{profile.driverName||"Owner Operator"}</div>
               <div>{profile.payPeriod} · {profile.fleets[0]?.name||"Independent"}</div>
+              <div style={{display:"flex",alignItems:"center",gap:8,justifyContent:"flex-end",marginTop:3}}>
+                {syncing&&<span style={{fontSize:10,color:T.accent}}>Syncing…</span>}
+                <button onClick={signOut} style={{fontSize:10,color:T.muted,background:"none",padding:0,cursor:"pointer",textDecoration:"underline"}}>Sign Out</button>
+              </div>
             </div>
           </div>
         </div>
