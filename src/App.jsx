@@ -520,14 +520,14 @@ function ProfileTab({profile,setProfile}) {
         <Field label="Email"><input value={profile.email} onChange={e=>up("email",e.target.value)}/></Field>
         <Row2><Field label="CDL Number"><input value={profile.cdl||""} onChange={e=>up("cdl",e.target.value)}/></Field>
         <Field label="CDL State"><select value={profile.cdlState||"AL"} onChange={e=>up("cdlState",e.target.value)}>{STATES.map(s=><option key={s}>{s}</option>)}</select></Field></Row2>
-        <Row2><Field label="DOT Number"><input value={profile.dot} onChange={e=>up("dot",e.target.value)}/></Field>
-        <Field label="MC Number"><input value={profile.mc} onChange={e=>up("mc",e.target.value)}/></Field></Row2>
-        <Field label="EIN"><input value={profile.ein} onChange={e=>up("ein",e.target.value)} placeholder="XX-XXXXXXX"/></Field>
       </Card>}
 
       {sec==="company" && <Card>
         <SecHdr title="Company Information"/>
         <Field label="Company / DBA Name"><input value={profile.companyName} onChange={e=>up("companyName",e.target.value)}/></Field>
+        <Row2><Field label="DOT Number"><input value={profile.dot} onChange={e=>up("dot",e.target.value)}/></Field>
+        <Field label="MC Number"><input value={profile.mc} onChange={e=>up("mc",e.target.value)}/></Field></Row2>
+        <Field label="EIN"><input value={profile.ein} onChange={e=>up("ein",e.target.value)} placeholder="XX-XXXXXXX"/></Field>
         <Field label="Business Type">
           <select value={profile.businessType||"Sole Proprietor"} onChange={e=>up("businessType",e.target.value)}>
             {["Sole Proprietor","Single-Member LLC","Multi-Member LLC","S-Corp","C-Corp","Partnership"].map(x=><option key={x}>{x}</option>)}
@@ -847,7 +847,7 @@ function LoadsTab({loads,setLoads,profile}) {
       </div>
       {filtered.length===0&&<div style={{textAlign:"center",padding:"48px 0",color:T.muted}}><div style={{fontSize:36,marginBottom:10}}>📋</div><div style={{fontWeight:600}}>No loads yet</div></div>}
       {filtered.map(l=>(
-        <Card key={l.id} style={{marginBottom:10,cursor:"pointer"}} onClick={()=>{setEditLoad({...l});setView("form");}}>
+        <Card key={l.id} style={{marginBottom:10}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
             <div>
               <div style={{fontWeight:700,fontSize:14,fontFamily:"monospace"}}>{l.loadNumber}</div>
@@ -856,6 +856,10 @@ function LoadsTab({loads,setLoads,profile}) {
             <div style={{textAlign:"right"}}>
               <Badge label={l.status} color={statusColor(l.status)}/>
               <div style={{fontWeight:700,fontSize:16,color:T.green,marginTop:4}}>{fmt$(calcPay(l))}</div>
+              <div style={{display:"flex",gap:6,marginTop:6,justifyContent:"flex-end"}}>
+                <button onClick={()=>{setEditLoad({...l});setView("form");}} style={{fontSize:11,padding:"2px 10px",borderRadius:4,border:`1px solid ${T.accent}`,background:"transparent",color:T.accent,cursor:"pointer"}}>Edit</button>
+                <button onClick={()=>{if(window.confirm("Delete this load?"))setLoads(ls=>ls.filter(x=>x.id!==l.id));}} style={{fontSize:11,padding:"2px 10px",borderRadius:4,border:`1px solid ${T.red}`,background:"transparent",color:T.red,cursor:"pointer"}}>Delete</button>
+              </div>
             </div>
           </div>
           <div style={{display:"flex",gap:10,fontSize:11,color:T.muted,flexWrap:"wrap"}}>
