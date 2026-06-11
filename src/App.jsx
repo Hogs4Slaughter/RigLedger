@@ -425,10 +425,8 @@ function FuelEntryForm({entry, onChange, profile}) {
               {profile.units.map(u=><option key={u.id} value={u.id}>{u.identifier||u.make||u.id}</option>)}
             </select>
           </Field>
-          <Field label="Fleet">
-            <select value={entry.fleetId} onChange={e=>up("fleetId",e.target.value)}>
-              {profile.fleets.map(f=><option key={f.id} value={f.id}>{f.name}</option>)}
-            </select>
+          <Field label="Company">
+            <input value={entry.company||profile.companyName||""} onChange={e=>up("company",e.target.value)} placeholder={profile.companyName||"Company name"}/>
           </Field>
         </Row2>
         <div className="toggle-row">
