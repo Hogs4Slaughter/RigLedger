@@ -1789,7 +1789,14 @@ function AuthScreen() {
       options:{shouldCreateUser:true,emailRedirectTo:"https://rigledger.vercel.app"}
     });
     setLoading(false);
-    if(err){setError(err.message);return;}
+    if(err){
+      if(err.message.toLowerCase().includes("rate limit")||err.status===429){
+        setError("The Rig Ledger is currently in beta testing and has a new user limit. Please try again in about an hour.");
+      } else {
+        setError(err.message);
+      }
+      return;
+    }
     setSent(true);
   };
 
