@@ -913,9 +913,8 @@ function LedgerTab({entries,setEntries,loads,profile,fuelEntries,setFuelEntries}
       const rid=`rec${Date.now()}`;
       const generated=[];
       let d=editEntry.date;
-      const endDate=addMonths(d,12);
-      while(d<=endDate){
-        generated.push({...editEntry,id:`le${Date.now()}${generated.length}`,recurringId:rid,date:d});
+      for(let i=0;i<3;i++){
+        generated.push({...editEntry,id:`le${Date.now()}${i}`,recurringId:rid,recurringFreq:editEntry.recurringFreq,date:d});
         d=nextDate(d,editEntry.recurringFreq);
       }
       setEntries(es=>[...es,...generated]);
@@ -947,6 +946,26 @@ function LedgerTab({entries,setEntries,loads,profile,fuelEntries,setFuelEntries}
 
   const today=nowDate();
   const hiddenCount=entries.filter(e=>e.type===tab&&e.recurringId&&e.date>today).length;
+
+  // Find recurring series where all entries are past (series complete) — group by recurringId
+  const recurringGroups={};
+  entries.filter(e=>e.type===tab&&e.recurringId).forEach(e=>{
+    if(!recurringGroups[e.recurringId])recurringGroups[e.recurringId]=[];
+    recurringGroups[e.recurringId].push(e);
+  });
+  const expiredSeries=Object.values(recurringGroups).filter(group=>group.every(e=>e.date<=today));
+
+  const renewSeries=(group)=>{
+    const last=group.reduce((a,b)=>a.date>b.date?a:b);
+    const rid=`rec${Date.now()}`;
+    const generated=[];
+    let d=nextDate(last.date,last.recurringFreq||"Monthly");
+    for(let i=0;i<3;i++){
+      generated.push({...last,id:`le${Date.now()}${i}`,recurringId:rid,date:d});
+      d=nextDate(d,last.recurringFreq||"Monthly");
+    }
+    setEntries(es=>[...es,...generated]);
+  };
   const allEntries=[
     ...entries.filter(e=>e.type===tab&&(showUpcoming||!e.recurringId||e.date<=today)),
     ...(tab==="expense"?fuelEntries.map(fe=>({...fe,type:"fuel",amount:fuelTotal(fe)})):[]),
@@ -1047,6 +1066,23 @@ function LedgerTab({entries,setEntries,loads,profile,fuelEntries,setFuelEntries}
           <Btn onClick={()=>openNew(tab)} style={{whiteSpace:"nowrap"}}>+ {tab==="income"?"Income":"Expense"}</Btn>
         </div>
       </div>
+
+      {expiredSeries.map(group=>{
+        const last=group.reduce((a,b)=>a.date>b.date?a:b);
+        const label=last.description||last.vendor||last.categoryId||"Recurring payment";
+        return(
+          <div key={last.recurringId} style={{marginBottom:10,padding:"12px 14px",borderRadius:10,background:`${T.accent}15`,border:`1px solid ${T.accent}44`,display:"flex",justifyContent:"space-between",alignItems:"center",gap:10}}>
+            <div>
+              <div style={{fontSize:13,fontWeight:700,color:T.text}}>🔁 {label}</div>
+              <div style={{fontSize:11,color:T.muted,marginTop:2}}>Recurring series ended — continue {last.recurringFreq||"Monthly"}?</div>
+            </div>
+            <div style={{display:"flex",gap:6,flexShrink:0}}>
+              <button onClick={()=>renewSeries(group)} style={{fontSize:11,padding:"4px 12px",borderRadius:6,border:`1px solid ${T.accent}`,background:T.accent,color:"#fff",cursor:"pointer",fontWeight:600}}>Renew</button>
+              <button onClick={()=>setEntries(es=>es.map(e=>e.recurringId===last.recurringId?{...e,recurringId:null}:e))} style={{fontSize:11,padding:"4px 10px",borderRadius:6,border:`1px solid ${T.border}`,background:"transparent",color:T.muted,cursor:"pointer"}}>Dismiss</button>
+            </div>
+          </div>
+        );
+      })}
 
       {hiddenCount>0&&(
         <button onClick={()=>setShowUpcoming(v=>!v)} style={{width:"100%",marginBottom:12,padding:"8px",borderRadius:8,border:`1px dashed ${T.border}`,background:"transparent",color:T.muted,fontSize:12,cursor:"pointer"}}>
