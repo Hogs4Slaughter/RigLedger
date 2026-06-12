@@ -886,7 +886,7 @@ function LedgerTab({entries,setEntries,loads,profile,fuelEntries,setFuelEntries}
 
   const lastExp=[...entries].reverse().find(e=>e.type==="expense");
   const lastInc=[...entries].reverse().find(e=>e.type==="income");
-  const blank=type=>({type,date:nowDate(),categoryId:"",subcategoryId:"",amount:"",description:"",loadNumber:"",fleetId:profile.fleets[0]?.id||"",driverId:profile.drivers[0]?.id||"",unitId:"office",vendor:"",notes:"",attachments:[]});
+  const blank=type=>({type,date:nowDate(),categoryId:"",subcategoryId:"",amount:"",description:"",loadNumber:"",fleetId:profile.fleets[0]?.id||"",driverId:profile.drivers[0]?.id||"",unitId:"office",vendor:"",notes:"",attachments:[],recurring:false,recurringFreq:"Monthly"});
 
   const openNew=type=>{
     const last=type==="expense"?lastExp:lastInc;
@@ -894,9 +894,33 @@ function LedgerTab({entries,setEntries,loads,profile,fuelEntries,setFuelEntries}
     setShowForm(true);
   };
 
+  const addMonths=(dateStr,n)=>{const d=new Date(dateStr+"T12:00:00");d.setMonth(d.getMonth()+n);return d.toISOString().slice(0,10);};
+  const addDays=(dateStr,n)=>{const d=new Date(dateStr+"T12:00:00");d.setDate(d.getDate()+n);return d.toISOString().slice(0,10);};
+  const nextDate=(dateStr,freq)=>{
+    if(freq==="Weekly")return addDays(dateStr,7);
+    if(freq==="Bi-Weekly")return addDays(dateStr,14);
+    if(freq==="Semi-Monthly")return addDays(dateStr,15);
+    if(freq==="Monthly")return addMonths(dateStr,1);
+    if(freq==="Quarterly")return addMonths(dateStr,3);
+    if(freq==="Annually")return addMonths(dateStr,12);
+    return addMonths(dateStr,1);
+  };
   const saveEntry=()=>{
-    if(editEntry.id)setEntries(es=>es.map(e=>e.id===editEntry.id?editEntry:e));
-    else setEntries(es=>[...es,{...editEntry,id:`le${Date.now()}`}]);
+    if(editEntry.id){
+      setEntries(es=>es.map(e=>e.id===editEntry.id?editEntry:e));
+    } else if(editEntry.recurring){
+      const rid=`rec${Date.now()}`;
+      const generated=[];
+      let d=editEntry.date;
+      const endDate=addMonths(d,12);
+      while(d<=endDate){
+        generated.push({...editEntry,id:`le${Date.now()}${generated.length}`,recurringId:rid,date:d});
+        d=nextDate(d,editEntry.recurringFreq);
+      }
+      setEntries(es=>[...es,...generated]);
+    } else {
+      setEntries(es=>[...es,{...editEntry,id:`le${Date.now()}`}]);
+    }
     setShowForm(false);setEditEntry(null);
   };
 
@@ -985,6 +1009,20 @@ function LedgerTab({entries,setEntries,loads,profile,fuelEntries,setFuelEntries}
           </Field>
         </Row2>
         <Field label="Vendor / Payee"><input value={editEntry.vendor||""} onChange={e=>setEditEntry(x=>({...x,vendor:e.target.value}))}/></Field>
+        <div className="toggle-row" style={{marginBottom:14}}>
+          <div>
+            <div style={{fontSize:13,fontWeight:600,color:T.text}}>Recurring Payment</div>
+            <div style={{fontSize:11,color:T.muted}}>Auto-generates entries for 12 months</div>
+          </div>
+          <Toggle value={editEntry.recurring||false} onChange={v=>setEditEntry(x=>({...x,recurring:v}))}/>
+        </div>
+        {editEntry.recurring&&!editEntry.id&&(
+          <Field label="Frequency">
+            <select value={editEntry.recurringFreq||"Monthly"} onChange={e=>setEditEntry(x=>({...x,recurringFreq:e.target.value}))}>
+              {["Weekly","Bi-Weekly","Semi-Monthly","Monthly","Quarterly","Annually"].map(f=><option key={f}>{f}</option>)}
+            </select>
+          </Field>
+        )}
         <Field label="Notes"><textarea value={editEntry.notes||""} onChange={e=>setEditEntry(x=>({...x,notes:e.target.value}))} rows={2} style={{resize:"vertical"}}/></Field>
         <Field label="Attachments">
           <Attachments attachments={editEntry.attachments||[]} onChange={v=>setEditEntry(x=>({...x,attachments:v}))}/>
@@ -1036,6 +1074,7 @@ function LedgerTab({entries,setEntries,loads,profile,fuelEntries,setFuelEntries}
               <div style={{display:"flex",gap:8,marginTop:2,alignItems:"center"}}>
                 <span style={{fontSize:11,color:T.muted}}>{e.date}</span>
                 {e.type==="fuel"&&<Badge label="Fuel" color={T.accent}/>}
+                {e.recurring&&<Badge label="🔁 Recurring" color={T.muted}/>}
                 {(e.attachments||[]).length>0&&<span style={{fontSize:10,color:T.muted}}>📎 {e.attachments.length}</span>}
               </div>
             </div>
