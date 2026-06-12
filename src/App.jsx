@@ -1093,7 +1093,19 @@ function LedgerTab({entries,setEntries,loads,profile,fuelEntries,setFuelEntries}
               </div>
               <div style={{display:"flex",gap:6}}>
                 <button onClick={()=>{if(e.type==="fuel"){setEditFuel({...e});setShowFuelForm(true);}else{setEditEntry({...e});setShowForm(true);}}} style={{fontSize:11,padding:"2px 10px",borderRadius:4,border:`1px solid ${T.accent}`,background:"transparent",color:T.accent,cursor:"pointer"}}>Edit</button>
-                <button onClick={()=>{if(window.confirm("Delete this entry?")){ if(e.type==="fuel")setFuelEntries(es=>es.filter(x=>x.id!==e.id));else setEntries(es=>es.filter(x=>x.id!==e.id));}}} style={{fontSize:11,padding:"2px 10px",borderRadius:4,border:`1px solid ${T.red}`,background:"transparent",color:T.red,cursor:"pointer"}}>Delete</button>
+                <button onClick={()=>{
+                  if(e.recurringId){
+                    const choice=window.confirm("Delete future recurring entries too?\n\nOK = Delete this + all future entries in this series\nCancel = Delete only this entry");
+                    if(choice===null)return;
+                    if(choice){
+                      setEntries(es=>es.filter(x=>!(x.recurringId===e.recurringId&&x.date>=e.date)));
+                    } else {
+                      setEntries(es=>es.filter(x=>x.id!==e.id));
+                    }
+                  } else {
+                    if(window.confirm("Delete this entry?")){ if(e.type==="fuel")setFuelEntries(es=>es.filter(x=>x.id!==e.id));else setEntries(es=>es.filter(x=>x.id!==e.id));}
+                  }
+                }} style={{fontSize:11,padding:"2px 10px",borderRadius:4,border:`1px solid ${T.red}`,background:"transparent",color:T.red,cursor:"pointer"}}>Delete</button>
               </div>
             </div>
           </div>
