@@ -883,6 +883,7 @@ function LedgerTab({entries,setEntries,loads,profile,fuelEntries,setFuelEntries}
   const [editEntry,setEditEntry]=useState(null);
   const [showFuelForm,setShowFuelForm]=useState(false);
   const [editFuel,setEditFuel]=useState(null);
+  const [showUpcoming,setShowUpcoming]=useState(false);
 
   const lastExp=[...entries].reverse().find(e=>e.type==="expense");
   const lastInc=[...entries].reverse().find(e=>e.type==="income");
@@ -944,10 +945,12 @@ function LedgerTab({entries,setEntries,loads,profile,fuelEntries,setFuelEntries}
 
   const fuelTotal=fe=>FUEL_TYPES.reduce((s,ft)=>s+(fe.fuelLines?.[ft]?.on?(Number(fe.fuelLines[ft].total)||0):0),0);
 
+  const today=nowDate();
+  const hiddenCount=entries.filter(e=>e.type===tab&&e.recurringId&&e.date>today).length;
   const allEntries=[
-    ...entries.filter(e=>e.type===tab),
+    ...entries.filter(e=>e.type===tab&&(showUpcoming||!e.recurringId||e.date<=today)),
     ...(tab==="expense"?fuelEntries.map(fe=>({...fe,type:"fuel",amount:fuelTotal(fe)})):[]),
-  ].sort((a,b)=>b.date?.localeCompare(a.date||"")).slice(0,100);
+  ].sort((a,b)=>b.date?.localeCompare(a.date||"")).slice(0,200);
 
   if(showFuelForm&&editFuel) return (
     <div style={{padding:"16px 0"}}>
@@ -1044,6 +1047,12 @@ function LedgerTab({entries,setEntries,loads,profile,fuelEntries,setFuelEntries}
           <Btn onClick={()=>openNew(tab)} style={{whiteSpace:"nowrap"}}>+ {tab==="income"?"Income":"Expense"}</Btn>
         </div>
       </div>
+
+      {hiddenCount>0&&(
+        <button onClick={()=>setShowUpcoming(v=>!v)} style={{width:"100%",marginBottom:12,padding:"8px",borderRadius:8,border:`1px dashed ${T.border}`,background:"transparent",color:T.muted,fontSize:12,cursor:"pointer"}}>
+          {showUpcoming?`Hide upcoming recurring entries`:`Show ${hiddenCount} upcoming recurring payment${hiddenCount!==1?"s":""} →`}
+        </button>
+      )}
 
       {/* Fuel quick-entry card — expense tab only */}
       {tab==="expense"&&(
