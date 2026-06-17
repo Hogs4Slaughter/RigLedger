@@ -221,6 +221,8 @@ const DEF_PROFILE = {
 // ── FILE ATTACHMENT COMPONENT ─────────────────────────────────────────────────
 function Attachments({attachments=[], onChange}) {
   const fileRef = useRef();
+  const [viewing, setViewing] = useState(null);
+
   const addFiles = async (files) => {
     const newAtts = [];
     for(const f of files) {
@@ -232,11 +234,29 @@ function Attachments({attachments=[], onChange}) {
   const remove = id => onChange(attachments.filter(a=>a.id!==id));
   const isImg = a => a.type?.startsWith("image/");
 
+  const openFile = a => {
+    if(isImg(a)){setViewing(a);}
+    else{
+      const link=document.createElement("a");
+      link.href=a.data;
+      link.download=a.name;
+      link.click();
+    }
+  };
+
   return (
     <div>
+      {/* Lightbox viewer */}
+      {viewing&&(
+        <div onClick={()=>setViewing(null)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,.92)",zIndex:9999,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:16}}>
+          <div style={{color:"#fff",fontSize:12,marginBottom:12,opacity:.7}}>{viewing.name} — tap anywhere to close</div>
+          <img src={viewing.data} alt={viewing.name} style={{maxWidth:"100%",maxHeight:"80vh",borderRadius:8,objectFit:"contain"}}/>
+          <a href={viewing.data} download={viewing.name} onClick={e=>e.stopPropagation()} style={{marginTop:16,color:T.accent,fontSize:13,padding:"8px 20px",border:`1px solid ${T.accent}`,borderRadius:8,textDecoration:"none"}}>Download</a>
+        </div>
+      )}
       <div style={{display:"flex",flexWrap:"wrap",gap:8,marginBottom:8}}>
         {attachments.map(a=>(
-          <div key={a.id} style={{position:"relative",borderRadius:8,overflow:"hidden",border:`1px solid ${T.border}`,background:T.surface}}>
+          <div key={a.id} style={{position:"relative",borderRadius:8,overflow:"hidden",border:`1px solid ${T.border}`,background:T.surface,cursor:"pointer"}} onClick={()=>openFile(a)}>
             {isImg(a) ? (
               <img src={a.data} alt={a.name} style={{width:80,height:80,objectFit:"cover",display:"block"}}/>
             ) : (
@@ -245,7 +265,7 @@ function Attachments({attachments=[], onChange}) {
                 <div style={{fontSize:9,color:T.muted,textAlign:"center",marginTop:2,wordBreak:"break-all"}}>{a.name.slice(0,16)}</div>
               </div>
             )}
-            <button onClick={()=>remove(a.id)} style={{position:"absolute",top:2,right:2,width:18,height:18,borderRadius:9,background:"rgba(0,0,0,.7)",color:"#fff",fontSize:10,display:"flex",alignItems:"center",justifyContent:"center",padding:0}}>×</button>
+            <button onClick={e=>{e.stopPropagation();remove(a.id);}} style={{position:"absolute",top:2,right:2,width:18,height:18,borderRadius:9,background:"rgba(0,0,0,.7)",color:"#fff",fontSize:10,display:"flex",alignItems:"center",justifyContent:"center",padding:0}}>×</button>
           </div>
         ))}
         <button onClick={()=>fileRef.current.click()} style={{width:80,height:80,borderRadius:8,border:`2px dashed ${T.border}`,background:T.surface,color:T.muted,fontSize:11,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:4}}>
