@@ -214,8 +214,7 @@ const DEF_PROFILE = {
   payPeriod:"Weekly",payPeriodStart:"Monday",defaultPayType:"Cents Per Mile",defaultCPM:"",
   units:[{id:"u1",type:"Truck",identifier:"",year:"",make:"",model:"",vin:"",plate:"",plateState:"AL"}],
   trailers:[],
-  fleets:[{id:"f1",name:"Owner Operator"}],
-  drivers:[{id:"d1",name:"",cdl:"",cdlState:"AL",email:"",phone:""}],
+  dispatchingCompany:"",
 };
 
 // ── FILE ATTACHMENT COMPONENT ─────────────────────────────────────────────────
@@ -358,7 +357,7 @@ Return ONLY the JSON, no other text.`}
 // ── FUEL ENTRY FORM ───────────────────────────────────────────────────────────
 const DEF_FUEL_ENTRY = {
   date: nowDate(), stationName:"", stationAddress:"", stationCity:"", stationState:"AL",
-  receiptNumber:"", paymentMethod:"", taxPaid:false, unitId:"", fleetId:"",
+  receiptNumber:"", paymentMethod:"", taxPaid:false, unitId:"",
   fuelLines:{ Diesel:{on:false,gallons:"",ppg:"",total:""},DEF:{on:false,gallons:"",ppg:"",total:""},
     "Reefer Fuel":{on:false,gallons:"",ppg:"",total:""},CNG:{on:false,gallons:"",ppg:"",total:""},
     Propane:{on:false,gallons:"",ppg:"",total:""},Other:{on:false,gallons:"",ppg:"",total:""}},
@@ -512,13 +511,9 @@ function ProfileTab({profile,setProfile}) {
   const up=(f,v)=>setProfile(p=>({...p,[f]:v}));
   const addUnit=()=>setProfile(p=>({...p,units:[...p.units,{id:`u${Date.now()}`,type:"Truck",identifier:"",year:"",make:"",model:"",vin:"",plate:"",plateState:"AL"}]}));
   const addTrailer=()=>setProfile(p=>({...p,trailers:[...p.trailers,{id:`t${Date.now()}`,identifier:"",year:"",make:"",model:"",vin:"",plate:"",plateState:"AL",type:"Dry Van"}]}));
-  const addFleet=()=>setProfile(p=>({...p,fleets:[...p.fleets,{id:`f${Date.now()}`,name:""}]}));
-  const addDriver=()=>setProfile(p=>({...p,drivers:[...p.drivers,{id:`d${Date.now()}`,name:"",cdl:"",cdlState:"AL",email:"",phone:""}]}));
   const upUnit=(id,f,v)=>setProfile(p=>({...p,units:p.units.map(u=>u.id===id?{...u,[f]:v}:u)}));
   const upTrailer=(id,f,v)=>setProfile(p=>({...p,trailers:p.trailers.map(t=>t.id===id?{...t,[f]:v}:t)}));
-  const upFleet=(id,v)=>setProfile(p=>({...p,fleets:p.fleets.map(f=>f.id===id?{...f,name:v}:f)}));
-  const upDriver=(id,f,v)=>setProfile(p=>({...p,drivers:p.drivers.map(d=>d.id===id?{...d,[f]:v}:d)}));
-  const sections=[{id:"personal",label:"Personal"},{id:"company",label:"Company"},{id:"units",label:"Units"},{id:"trailers",label:"Trailers"},{id:"fleet",label:"Fleet / Drivers"},{id:"pay",label:"Pay Settings"}];
+  const sections=[{id:"personal",label:"Personal"},{id:"company",label:"Company"},{id:"units",label:"Units"},{id:"trailers",label:"Trailers"},{id:"pay",label:"Pay Settings"}];
 
   return (
     <div style={{padding:"16px 0"}}>
@@ -566,6 +561,7 @@ function ProfileTab({profile,setProfile}) {
           <Field label="IFTA Account / License #"><input value={profile.ifta||""} onChange={e=>up("ifta",e.target.value)}/></Field>
           <Field label="Base Jurisdiction (State)"><select value={profile.iftaBase||profile.companyState||"AL"} onChange={e=>up("iftaBase",e.target.value)}>{STATES.map(s=><option key={s}>{s}</option>)}</select></Field>
         </Row2>
+        <Field label="Dispatching Company / Carrier (if leased on)"><input value={profile.dispatchingCompany||""} onChange={e=>up("dispatchingCompany",e.target.value)} placeholder="Leave blank if independent"/></Field>
       </Card>}
 
       {sec==="units" && <div>
@@ -598,26 +594,6 @@ function ProfileTab({profile,setProfile}) {
           </Card>
         ))}
         {profile.trailers.length<3&&<Btn onClick={addTrailer} variant="ghost" style={{width:"100%",padding:12}}>+ Add Trailer ({profile.trailers.length}/3)</Btn>}
-      </div>}
-
-      {sec==="fleet" && <div>
-        <Card style={{marginBottom:14}}>
-          <SecHdr title="Fleet / Company Assignments" action={<Btn onClick={addFleet} variant="ghost" style={{padding:"5px 12px",fontSize:12}}>+ Add</Btn>}/>
-          {profile.fleets.map((f,i)=>(
-            <Field key={f.id} label={`Fleet ${i+1}`}><input value={f.name} onChange={e=>upFleet(f.id,e.target.value)} placeholder="Company Name"/></Field>
-          ))}
-        </Card>
-        <Card>
-          <SecHdr title="Drivers" action={<Btn onClick={addDriver} variant="ghost" style={{padding:"5px 12px",fontSize:12}}>+ Add Driver</Btn>}/>
-          {profile.drivers.map((d,i)=>(
-            <div key={d.id} style={{padding:"10px 0",borderBottom:`1px solid ${T.border}`,marginBottom:8}}>
-              <Row2><Field label={`Driver ${i+1} Name`}><input value={d.name} onChange={e=>upDriver(d.id,"name",e.target.value)}/></Field>
-              <Field label="CDL #"><input value={d.cdl||""} onChange={e=>upDriver(d.id,"cdl",e.target.value)}/></Field></Row2>
-              <Row2><Field label="Phone"><input value={d.phone||""} onChange={e=>upDriver(d.id,"phone",e.target.value)}/></Field>
-              <Field label="Email"><input value={d.email||""} onChange={e=>upDriver(d.id,"email",e.target.value)}/></Field></Row2>
-            </div>
-          ))}
-        </Card>
       </div>}
 
       {sec==="pay" && <Card>
@@ -658,10 +634,7 @@ function LoadForm({load,onChange,profile,allLoads}) {
 
       <Card style={{marginBottom:14}}>
         <SecHdr title="Assignment"/>
-        <Row2>
-          <Field label="Company"><input value={load.company||profile.companyName||""} onChange={e=>up("company",e.target.value)} placeholder={profile.companyName||"Company name"}/></Field>
-          <Field label="Driver"><select value={load.driverId} onChange={e=>up("driverId",e.target.value)}>{profile.drivers.map(d=><option key={d.id} value={d.id}>{d.name||"(unnamed)"}</option>)}</select></Field>
-        </Row2>
+        <Field label="Company"><input value={load.company||profile.companyName||""} onChange={e=>up("company",e.target.value)} placeholder={profile.companyName||"Company name"}/></Field>
         <Row2>
           <Field label="Truck"><select value={load.unitId} onChange={e=>up("unitId",e.target.value)}>{profile.units.map(u=><option key={u.id} value={u.id}>{u.identifier||u.make||u.id}</option>)}</select></Field>
           <Field label="Trailer"><select value={load.trailerIds?.[0]||""} onChange={e=>up("trailerIds",[e.target.value])}><option value="">None</option>{profile.trailers.map(t=><option key={t.id} value={t.id}>{t.identifier||t.id}</option>)}</select></Field>
@@ -819,8 +792,6 @@ function LoadsTab({loads,setLoads,profile}) {
       odomStart:last?.odomEnd||"",odomEnd:"",loadedMiles:"",deadheadMiles:"",
       deadheadPaid:false,flatRate:"",hourlyRate:"",hoursWorked:"",
       percentage:"",grossRevenue:"",cpmRate:profile.defaultCPM||"",
-      fleetId:last?.fleetId||profile.fleets[0]?.id||"f1",
-      driverId:last?.driverId||profile.drivers[0]?.id||"d1",
       unitId:last?.unitId||profile.units[0]?.id||"u1",
       trailerIds:[],broker:"",brokerPhone:"",brokerRef:"",
       notes:"",attachments:[],stateCrossings:[],
@@ -907,11 +878,11 @@ function LedgerTab({entries,setEntries,loads,profile,fuelEntries,setFuelEntries}
 
   const lastExp=[...entries].reverse().find(e=>e.type==="expense");
   const lastInc=[...entries].reverse().find(e=>e.type==="income");
-  const blank=type=>({type,date:nowDate(),categoryId:"",subcategoryId:"",amount:"",description:"",loadNumber:"",fleetId:profile.fleets[0]?.id||"",driverId:profile.drivers[0]?.id||"",unitId:"office",vendor:"",notes:"",attachments:[],recurring:false,recurringFreq:"Monthly"});
+  const blank=type=>({type,date:nowDate(),categoryId:"",subcategoryId:"",amount:"",description:"",loadNumber:"",unitId:"office",vendor:"",notes:"",attachments:[],recurring:false,recurringFreq:"Monthly"});
 
   const openNew=type=>{
     const last=type==="expense"?lastExp:lastInc;
-    setEditEntry({...blank(type),fleetId:last?.fleetId||profile.fleets[0]?.id||"",unitId:type==="expense"?(last?.unitId||"office"):""});
+    setEditEntry({...blank(type),unitId:type==="expense"?(last?.unitId||"office"):""});
     setShowForm(true);
   };
 
@@ -1082,7 +1053,7 @@ function LedgerTab({entries,setEntries,loads,profile,fuelEntries,setFuelEntries}
           ))}
         </div>
         <div style={{display:"flex",gap:6}}>
-          {tab==="expense"&&<Btn onClick={()=>{const last=fuelEntries[fuelEntries.length-1];setEditFuel({...DEF_FUEL_ENTRY,fleetId:last?.fleetId||profile.fleets[0]?.id||"",unitId:last?.unitId||profile.units[0]?.id||""});setShowFuelForm(true);}} variant="ghost" style={{fontSize:12,padding:"8px 12px",whiteSpace:"nowrap",color:T.red,borderColor:T.red}}>+ Fuel</Btn>}
+          {tab==="expense"&&<Btn onClick={()=>{const last=fuelEntries[fuelEntries.length-1];setEditFuel({...DEF_FUEL_ENTRY,unitId:last?.unitId||profile.units[0]?.id||""});setShowFuelForm(true);}} variant="ghost" style={{fontSize:12,padding:"8px 12px",whiteSpace:"nowrap",color:T.red,borderColor:T.red}}>+ Fuel</Btn>}
           <Btn onClick={()=>openNew(tab)} style={{whiteSpace:"nowrap"}}>+ {tab==="income"?"Income":"Expense"}</Btn>
         </div>
       </div>
@@ -1113,7 +1084,7 @@ function LedgerTab({entries,setEntries,loads,profile,fuelEntries,setFuelEntries}
       {/* Fuel quick-entry card — expense tab only */}
       {tab==="expense"&&(
         <Card style={{marginBottom:14,cursor:"pointer",border:`1px solid ${T.red}44`,background:`${T.red}09`}}
-          onClick={()=>{const last=fuelEntries[fuelEntries.length-1];setEditFuel({...DEF_FUEL_ENTRY,fleetId:last?.fleetId||profile.fleets[0]?.id||"",unitId:last?.unitId||profile.units[0]?.id||""});setShowFuelForm(true);}}>
+          onClick={()=>{const last=fuelEntries[fuelEntries.length-1];setEditFuel({...DEF_FUEL_ENTRY,unitId:last?.unitId||profile.units[0]?.id||""});setShowFuelForm(true);}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
             <div>
               <div style={{fontWeight:700,fontSize:14,color:T.text}}>Fuel & Fluids</div>
@@ -1363,7 +1334,7 @@ function DashboardTab({loads,entries,fuelEntries,maintenance,profile}) {
   };
 
   const fl=loads.filter(l=>inPeriod(l.deliveryDate||l.pickupDate)&&unitActive(l.unitId));
-  const fe=entries.filter(e=>inPeriod(e.date)&&(selectedUnits.includes("all")||selectedUnits.includes(e.unitId)||selectedUnits.includes(e.driverId)));
+  const fe=entries.filter(e=>inPeriod(e.date)&&(selectedUnits.includes("all")||selectedUnits.includes(e.unitId)));
   const ff=fuelEntries.filter(f=>inPeriod(f.date)&&unitActive(f.unitId));
   const fm=maintenance.filter(m=>inPeriod(m.date)&&unitActive(m.unitId));
 
@@ -2158,7 +2129,7 @@ export default function RigBooks() {
             </div>
             <div style={{fontSize:11,color:T.muted,textAlign:"right"}}>
               <div style={{fontWeight:600,color:T.text}}>{profile.driverName||"Owner Operator"}</div>
-              <div>{profile.payPeriod} · {profile.fleets[0]?.name||"Independent"}</div>
+              <div>{profile.payPeriod} · {profile.dispatchingCompany||profile.companyName||"Independent"}</div>
               <div style={{display:"flex",alignItems:"center",gap:8,justifyContent:"flex-end",marginTop:3}}>
                 {syncing&&<span style={{fontSize:10,color:T.accent}}>Syncing…</span>}
                 <button onClick={signOut} style={{fontSize:10,color:T.muted,background:"none",padding:0,cursor:"pointer",textDecoration:"underline"}}>Sign Out</button>
