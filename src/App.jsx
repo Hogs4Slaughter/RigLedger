@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useRef, useCallback } from "react";
+﻿import { useState, useEffect, useRef } from "react";
 import { PieChart, Pie, Cell, BarChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend } from "recharts";
 import { supabase } from "./supabase.js";
 
@@ -2037,12 +2037,16 @@ export default function RigBooks() {
     })();
   },[session?.user?.id]);
 
-  // Debounced cloud save whenever any data changes
-  const schedSave=useCallback(()=>{
-    if(!session?.user||!dataLoaded)return;
+  // Use refs to always have current values in the debounced save
+  const latestData=useRef({});
+  latestData.current={profile,loads,entries,fuelEntries,maintenance};
+
+  useEffect(()=>{
+    if(!dataLoaded||!session?.user)return;
     clearTimeout(saveTimer.current);
     saveTimer.current=setTimeout(async()=>{
       setSyncing(true);
+      const {profile,loads,entries,fuelEntries,maintenance}=latestData.current;
       await supabase.from("user_data").upsert({
         id:session.user.id,
         profile,loads,entries,fuel:fuelEntries,maintenance,
@@ -2050,9 +2054,7 @@ export default function RigBooks() {
       });
       setSyncing(false);
     },1500);
-  },[session,dataLoaded,profile,loads,entries,fuelEntries,maintenance]);
-
-  useEffect(()=>{if(dataLoaded)schedSave();},[profile,loads,entries,fuelEntries,maintenance]);
+  },[profile,loads,entries,fuelEntries,maintenance,dataLoaded,session?.user?.id]);
 
   const signOut=async()=>{await supabase.auth.signOut();setDataLoaded(false);};
 
