@@ -206,12 +206,13 @@ const fileToB64 = f => new Promise((res,rej)=>{const r=new FileReader();r.onload
 const nowDate = () => new Date().toISOString().slice(0,10);
 
 // ── DEFAULTS ──────────────────────────────────────────────────────────────────
-const DEF_UNIT = {id:"u1",type:"Truck",identifier:"",year:"",make:"",model:"",vin:"",plate:"",plateState:"AL",dot:"",mc:"",ifta:"",iftaBase:"AL",dispatchingCompany:""};
+const DEF_UNIT = {id:"u1",type:"Truck",identifier:"",year:"",make:"",model:"",vin:"",plate:"",plateState:"AL",useCompanyAuthority:false,dot:"",mc:"",ifta:"",iftaBase:"AL",dispatchingCompany:""};
 const DEF_DRIVER = {id:"d1",name:"",phone:"",email:"",cdl:"",cdlState:"AL",unitId:"",trailerIds:[],payType:"Cents Per Mile",cpmRate:"",flatRate:"",hourlyRate:"",percentage:""};
 const DEF_PROFILE = {
   companyName:"",companyAddress:"",companyCity:"",companyState:"AL",companyZip:"",
   businessType:"Sole Proprietor",ein:"",
   bizPhone:"",bizEmail:"",
+  ownAuthority:false,dot:"",mc:"",ifta:"",iftaBase:"AL",
   payPeriod:"Weekly",payPeriodStart:"Monday",
   units:[{...DEF_UNIT}],
   trailers:[],
@@ -582,6 +583,26 @@ function ProfileTab({profile,setProfile}) {
           <Field label="Business Phone"><input value={d.bizPhone||""} readOnly={ro} onChange={e=>up("bizPhone",e.target.value)}/></Field>
           <Field label="Business Email"><input value={d.bizEmail||""} readOnly={ro} onChange={e=>up("bizEmail",e.target.value)}/></Field>
         </Row2>
+
+        <div style={{marginTop:10,paddingTop:12,borderTop:`1px solid ${T.border}`}}>
+          <div className="toggle-row" style={{marginBottom:d.ownAuthority?14:0}}>
+            <div>
+              <div style={{fontSize:13,fontWeight:600,color:T.text}}>Operating Under Own Authority</div>
+              <div style={{fontSize:11,color:T.muted}}>Company holds its own DOT / MC numbers</div>
+            </div>
+            <Toggle value={!!d.ownAuthority} onChange={v=>!ro&&up("ownAuthority",v)}/>
+          </div>
+          {d.ownAuthority&&<>
+            <Row2>
+              <Field label="DOT Number"><input value={d.dot||""} readOnly={ro} onChange={e=>up("dot",e.target.value)}/></Field>
+              <Field label="MC Number"><input value={d.mc||""} readOnly={ro} onChange={e=>up("mc",e.target.value)}/></Field>
+            </Row2>
+            <Row2>
+              <Field label="IFTA License #"><input value={d.ifta||""} readOnly={ro} onChange={e=>up("ifta",e.target.value)}/></Field>
+              <Field label="IFTA Base State"><select value={d.iftaBase||"AL"} disabled={ro} onChange={e=>up("iftaBase",e.target.value)}>{STATES.map(s=><option key={s}>{s}</option>)}</select></Field>
+            </Row2>
+          </>}
+        </div>
       </Card>}
 
       {sec==="driver" && <div>
@@ -656,11 +677,37 @@ function ProfileTab({profile,setProfile}) {
             <Row2><Field label="License Plate"><input value={u.plate} readOnly={ro} onChange={e=>upUnit(u.id,"plate",e.target.value)}/></Field>
             <Field label="Plate State"><select value={u.plateState||"AL"} disabled={ro} onChange={e=>upUnit(u.id,"plateState",e.target.value)}>{STATES.map(s=><option key={s}>{s}</option>)}</select></Field></Row2>
             <div style={{marginTop:8,paddingTop:10,borderTop:`1px solid ${T.border}`}}>
-              <div style={{fontSize:12,fontWeight:700,color:T.muted,marginBottom:8,textTransform:"uppercase",letterSpacing:".04em"}}>Carrier / Regulatory</div>
-              <Row2><Field label="DOT Number"><input value={u.dot||""} readOnly={ro} onChange={e=>upUnit(u.id,"dot",e.target.value)}/></Field>
-              <Field label="MC Number"><input value={u.mc||""} readOnly={ro} onChange={e=>upUnit(u.id,"mc",e.target.value)}/></Field></Row2>
-              <Row2><Field label="IFTA License #"><input value={u.ifta||""} readOnly={ro} onChange={e=>upUnit(u.id,"ifta",e.target.value)}/></Field>
-              <Field label="IFTA Base State"><select value={u.iftaBase||"AL"} disabled={ro} onChange={e=>upUnit(u.id,"iftaBase",e.target.value)}>{STATES.map(s=><option key={s}>{s}</option>)}</select></Field></Row2>
+              <div style={{fontSize:12,fontWeight:700,color:T.muted,marginBottom:10,textTransform:"uppercase",letterSpacing:".04em"}}>Carrier / Regulatory</div>
+              {d.ownAuthority&&(
+                <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12,padding:"8px 10px",borderRadius:8,background:`${T.accent}10`,border:`1px solid ${T.accent}30`}}>
+                  <input type="checkbox" id={`oca-${u.id}`} checked={!!u.useCompanyAuthority} disabled={ro}
+                    onChange={e=>upUnit(u.id,"useCompanyAuthority",e.target.checked)}
+                    style={{width:16,height:16,accentColor:T.accent,cursor:ro?"default":"pointer"}}/>
+                  <label htmlFor={`oca-${u.id}`} style={{fontSize:13,fontWeight:600,color:T.text,cursor:ro?"default":"pointer"}}>
+                    Running under company authority
+                  </label>
+                </div>
+              )}
+              {u.useCompanyAuthority&&d.ownAuthority?(
+                <>
+                  <Row2>
+                    <Field label="DOT Number"><input value={d.dot||""} readOnly style={{color:T.muted,cursor:"default"}}/></Field>
+                    <Field label="MC Number"><input value={d.mc||""} readOnly style={{color:T.muted,cursor:"default"}}/></Field>
+                  </Row2>
+                  <Row2>
+                    <Field label="IFTA License #"><input value={d.ifta||""} readOnly style={{color:T.muted,cursor:"default"}}/></Field>
+                    <Field label="IFTA Base State"><input value={d.iftaBase||"AL"} readOnly style={{color:T.muted,cursor:"default"}}/></Field>
+                  </Row2>
+                  <div style={{fontSize:11,color:T.muted,marginBottom:8}}>Auto-filled from Company tab. Edit there to update.</div>
+                </>
+              ):(
+                <>
+                  <Row2><Field label="DOT Number"><input value={u.dot||""} readOnly={ro} onChange={e=>upUnit(u.id,"dot",e.target.value)}/></Field>
+                  <Field label="MC Number"><input value={u.mc||""} readOnly={ro} onChange={e=>upUnit(u.id,"mc",e.target.value)}/></Field></Row2>
+                  <Row2><Field label="IFTA License #"><input value={u.ifta||""} readOnly={ro} onChange={e=>upUnit(u.id,"ifta",e.target.value)}/></Field>
+                  <Field label="IFTA Base State"><select value={u.iftaBase||"AL"} disabled={ro} onChange={e=>upUnit(u.id,"iftaBase",e.target.value)}>{STATES.map(s=><option key={s}>{s}</option>)}</select></Field></Row2>
+                </>
+              )}
               <Field label="Dispatching Company / Carrier"><input value={u.dispatchingCompany||""} readOnly={ro} onChange={e=>upUnit(u.id,"dispatchingCompany",e.target.value)} placeholder="Leave blank if operating independently"/></Field>
             </div>
           </Card>
