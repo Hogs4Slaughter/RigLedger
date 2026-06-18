@@ -658,17 +658,15 @@ function ProfileTab({profile,setProfile}) {
             <Field label="Plate State"><select value={u.plateState||"AL"} disabled={ro} onChange={e=>upUnit(u.id,"plateState",e.target.value)}>{STATES.map(s=><option key={s}>{s}</option>)}</select></Field></Row2>
             <div style={{marginTop:8,paddingTop:10,borderTop:`1px solid ${T.border}`}}>
               <div style={{fontSize:12,fontWeight:700,color:T.muted,marginBottom:10,textTransform:"uppercase",letterSpacing:".04em"}}>Carrier / Regulatory</div>
-              {d.ownAuthority&&(
-                <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12,padding:"8px 10px",borderRadius:8,background:`${T.accent}10`,border:`1px solid ${T.accent}30`}}>
-                  <input type="checkbox" id={`oca-${u.id}`} checked={!!u.useCompanyAuthority} disabled={ro}
-                    onChange={e=>upUnit(u.id,"useCompanyAuthority",e.target.checked)}
-                    style={{width:16,height:16,accentColor:T.accent,cursor:ro?"default":"pointer"}}/>
-                  <label htmlFor={`oca-${u.id}`} style={{fontSize:13,fontWeight:600,color:T.text,cursor:ro?"default":"pointer"}}>
-                    Running under company authority
-                  </label>
-                </div>
-              )}
-              {u.useCompanyAuthority&&d.ownAuthority?(
+              <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12,padding:"8px 10px",borderRadius:8,background:`${T.accent}10`,border:`1px solid ${T.accent}30`}}>
+                <input type="checkbox" id={`oca-${u.id}`} checked={!!u.useCompanyAuthority} disabled={ro}
+                  onChange={e=>upUnit(u.id,"useCompanyAuthority",e.target.checked)}
+                  style={{width:16,height:16,accentColor:T.accent,cursor:ro?"default":"pointer"}}/>
+                <label htmlFor={`oca-${u.id}`} style={{fontSize:13,fontWeight:600,color:T.text,cursor:ro?"default":"pointer"}}>
+                  Running under company's own authority
+                </label>
+              </div>
+              {u.useCompanyAuthority?(
                 <>
                   <Row2>
                     <Field label="DOT Number"><input value={d.dot||""} readOnly style={{color:T.muted,cursor:"default"}}/></Field>
@@ -678,17 +676,18 @@ function ProfileTab({profile,setProfile}) {
                     <Field label="IFTA License #"><input value={d.ifta||""} readOnly style={{color:T.muted,cursor:"default"}}/></Field>
                     <Field label="IFTA Base State"><input value={d.iftaBase||"AL"} readOnly style={{color:T.muted,cursor:"default"}}/></Field>
                   </Row2>
-                  <div style={{fontSize:11,color:T.muted,marginBottom:8}}>Auto-filled from Company tab. Edit there to update.</div>
+                  {(!d.dot&&!d.mc&&!d.ifta)&&<div style={{fontSize:11,color:T.yellow,marginBottom:8}}>Add DOT/MC/IFTA on the Company tab first.</div>}
+                  {(d.dot||d.mc||d.ifta)&&<div style={{fontSize:11,color:T.muted,marginBottom:8}}>Auto-filled from Company tab. Edit there to update.</div>}
                 </>
               ):(
                 <>
-                  <Row2><Field label="DOT Number"><input value={u.dot||""} readOnly={ro} onChange={e=>upUnit(u.id,"dot",e.target.value)}/></Field>
-                  <Field label="MC Number"><input value={u.mc||""} readOnly={ro} onChange={e=>upUnit(u.id,"mc",e.target.value)}/></Field></Row2>
+                  <Row2><Field label="DOT Number"><input value={u.dot||""} readOnly={ro} onChange={e=>upUnit(u.id,"dot",e.target.value)} placeholder="Leased carrier DOT"/></Field>
+                  <Field label="MC Number"><input value={u.mc||""} readOnly={ro} onChange={e=>upUnit(u.id,"mc",e.target.value)} placeholder="Leased carrier MC"/></Field></Row2>
                   <Row2><Field label="IFTA License #"><input value={u.ifta||""} readOnly={ro} onChange={e=>upUnit(u.id,"ifta",e.target.value)}/></Field>
                   <Field label="IFTA Base State"><select value={u.iftaBase||"AL"} disabled={ro} onChange={e=>upUnit(u.id,"iftaBase",e.target.value)}>{STATES.map(s=><option key={s}>{s}</option>)}</select></Field></Row2>
+                  <Field label="Leased To / Dispatching Carrier"><input value={u.dispatchingCompany||""} readOnly={ro} onChange={e=>upUnit(u.id,"dispatchingCompany",e.target.value)} placeholder="Carrier name this unit is leased to"/></Field>
                 </>
               )}
-              <Field label="Dispatching Company / Carrier"><input value={u.dispatchingCompany||""} readOnly={ro} onChange={e=>upUnit(u.id,"dispatchingCompany",e.target.value)} placeholder="Leave blank if operating independently"/></Field>
             </div>
           </Card>
         ))}
