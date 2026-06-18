@@ -205,7 +205,7 @@ const fileToB64 = f => new Promise((res,rej)=>{const r=new FileReader();r.onload
 const nowDate = () => new Date().toISOString().slice(0,10);
 
 // ── DEFAULTS ──────────────────────────────────────────────────────────────────
-const DEF_UNIT = {id:"u1",type:"Truck",identifier:"",year:"",make:"",model:"",vin:"",plate:"",plateState:"AL",useCompanyAuthority:false,dot:"",mc:"",ifta:"",iftaBase:"AL",dispatchingCompany:""};
+const DEF_UNIT = {id:"u1",type:"Truck",identifier:"",year:"",make:"",model:"",vin:"",plate:"",plateState:"AL",useCompanyAuthority:false,dot:"",mc:"",ifta:"",iftaBase:"AL",dispatchingCompany:"",dispatchingPhone:""};
 const DEF_DRIVER = {id:"d1",name:"",phone:"",email:"",cdl:"",cdlState:"AL",unitId:"",trailerIds:[],payType:"Cents Per Mile",cpmRate:"",flatRate:"",hourlyRate:"",percentage:""};
 const DEF_PROFILE = {
   companyName:"",companyAddress:"",companyCity:"",companyState:"AL",companyZip:"",
@@ -384,7 +384,7 @@ function FuelEntryForm({entry, onChange, profile}) {
       }
     }
     if(imgB64) updates.attachments=[...entry.attachments,{id:`att_${Date.now()}`,name:"receipt_scan.jpg",type:"image/jpeg",data:imgB64,added:nowDate()}];
-    onChange(updates);
+    onChange({...entry,...updates});
   };
 
   // IFTA validation
@@ -428,7 +428,7 @@ function FuelEntryForm({entry, onChange, profile}) {
             </select>
           </Field>
           <Field label="Company">
-            <input value={entry.company||profile.companyName||""} onChange={e=>up("company",e.target.value)} placeholder={profile.companyName||"Company name"}/>
+            <input value={entry.company||profile.companyName||""} readOnly style={{color:T.muted,cursor:"default"}}/>
           </Field>
         </Row2>
         <div className="toggle-row">
@@ -686,6 +686,7 @@ function ProfileTab({profile,setProfile}) {
                   <Row2><Field label="IFTA License #"><input value={u.ifta||""} readOnly={ro} onChange={e=>upUnit(u.id,"ifta",e.target.value)}/></Field>
                   <Field label="IFTA Base State"><select value={u.iftaBase||"AL"} disabled={ro} onChange={e=>upUnit(u.id,"iftaBase",e.target.value)}>{STATES.map(s=><option key={s}>{s}</option>)}</select></Field></Row2>
                   <Field label="Leased To / Dispatching Carrier"><input value={u.dispatchingCompany||""} readOnly={ro} onChange={e=>upUnit(u.id,"dispatchingCompany",e.target.value)} placeholder="Carrier name this unit is leased to"/></Field>
+                  <Field label="Carrier Phone"><input value={u.dispatchingPhone||""} readOnly={ro} onChange={e=>upUnit(u.id,"dispatchingPhone",e.target.value)} placeholder="(555) 000-0000"/></Field>
                 </>
               )}
             </div>
@@ -726,8 +727,9 @@ function ProfileTab({profile,setProfile}) {
 }
 
 // ── LOAD FORM ─────────────────────────────────────────────────────────────────
-function LoadForm({load,onChange,profile,allLoads}) {
-  const up=(f,v)=>onChange({...load,[f]:v});
+function LoadForm({load,onChange,profile,allLoads,locked=false}) {
+  const up=(f,v)=>{if(!locked)onChange({...load,[f]:v});};
+  const ro=locked;
   const odomDelta=(Number(load.odomEnd)||0)-(Number(load.odomStart)||0);
   const loadedMi=Number(load.loadedMiles)||0;
   const deadMi=Number(load.deadheadMiles)||0;
@@ -742,7 +744,7 @@ function LoadForm({load,onChange,profile,allLoads}) {
   const scTotal=(load.stateCrossings||[]).reduce((s,sc)=>s+(Number(sc.miles)||0),0);
 
   return (
-    <div>
+    <div style={ro?{pointerEvents:"none",opacity:.8,userSelect:"none"}:{}}>
       <Row2 style={{marginBottom:14}}>
         <Field label="Load Number"><input value={load.loadNumber} readOnly style={{color:T.muted,cursor:"default",fontFamily:"monospace"}}/></Field>
         <Field label="Status"><select value={load.status} onChange={e=>up("status",e.target.value)}>{LOAD_STATUSES.map(s=><option key={s}>{s}</option>)}</select></Field>
@@ -773,7 +775,15 @@ function LoadForm({load,onChange,profile,allLoads}) {
         </Field>
         <Row2>
           <Field label="Truck">
-            <select value={load.unitId||""} onChange={e=>up("unitId",e.target.value)}>
+            <select value={load.unitId||""} onChange={e=>{
+              const unit=profile.units.find(u=>u.id===e.target.value);
+              const isLeased=unit&&!unit.useCompanyAuthority&&unit.dispatchingCompany;
+              onChange({...load,
+                unitId:e.target.value,
+                broker:isLeased?unit.dispatchingCompany:load.broker,
+                brokerPhone:isLeased?unit.dispatchingPhone||load.brokerPhone:load.brokerPhone,
+              });
+            }}>
               <option value="">— None —</option>
               {profile.units.map(u=><option key={u.id} value={u.id}>{u.identifier||u.make||u.id}</option>)}
             </select>
@@ -962,7 +972,7 @@ function LoadsTab({loads,setLoads,profile}) {
       origin:"",originState:"AL",destination:"",destState:"AL",
       pickupDate:"",deliveryDate:"",
       odomStart:last?.odomEnd||"",odomEnd:"",loadedMiles:"",deadheadMiles:"",
-      deadheadPaid:false,
+      deadheadPaid:true,
       unitId:drv?.unitId||last?.unitId||profile.units[0]?.id||"",
       trailerIds:drv?.trailerIds||[],
       broker:"",brokerPhone:"",brokerRef:"",
@@ -991,9 +1001,12 @@ function LoadsTab({loads,setLoads,profile}) {
     <div style={{padding:"16px 0"}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
         <button onClick={()=>{setView("list");setEditLoad(null);}} style={{background:"none",color:T.muted,fontSize:13}}>← Back</button>
-        <Btn onClick={saveLoad} variant="success">Save Load</Btn>
+        {editLoad.status==="Paid"&&editLoad.id
+          ? <span style={{fontSize:12,color:T.green,fontWeight:700}}>🔒 Paid — Read Only</span>
+          : <Btn onClick={saveLoad} variant="success">Save Load</Btn>
+        }
       </div>
-      <LoadForm load={editLoad} onChange={setEditLoad} profile={profile} allLoads={loads}/>
+      <LoadForm load={editLoad} onChange={editLoad.status==="Paid"&&editLoad.id?()=>{}:setEditLoad} profile={profile} allLoads={loads} locked={!!(editLoad.status==="Paid"&&editLoad.id)}/>
     </div>
   );
 
@@ -1019,7 +1032,11 @@ function LoadsTab({loads,setLoads,profile}) {
               <Badge label={l.status} color={statusColor(l.status)}/>
               <div style={{fontWeight:700,fontSize:16,color:T.green,marginTop:4}}>{fmt$(calcPay(l))}</div>
               <div style={{display:"flex",gap:6,marginTop:6,justifyContent:"flex-end"}}>
-                <button onClick={()=>{setEditLoad({...l});setView("form");}} style={{fontSize:11,padding:"2px 10px",borderRadius:4,border:`1px solid ${T.accent}`,background:"transparent",color:T.accent,cursor:"pointer"}}>Edit</button>
+                {l.status==="Paid"?(
+                  <span style={{fontSize:10,padding:"2px 8px",borderRadius:4,background:`${T.green}20`,color:T.green,fontWeight:700,border:`1px solid ${T.green}50`}}>🔒 Locked</span>
+                ):(
+                  <button onClick={()=>{setEditLoad({...l});setView("form");}} style={{fontSize:11,padding:"2px 10px",borderRadius:4,border:`1px solid ${T.accent}`,background:"transparent",color:T.accent,cursor:"pointer"}}>Edit</button>
+                )}
                 <button onClick={()=>{if(window.confirm("Delete this load?"))setLoads(ls=>ls.filter(x=>x.id!==l.id));}} style={{fontSize:11,padding:"2px 10px",borderRadius:4,border:`1px solid ${T.red}`,background:"transparent",color:T.red,cursor:"pointer"}}>Delete</button>
               </div>
             </div>
@@ -1206,7 +1223,7 @@ function LedgerTab({entries,setEntries,loads,profile,fuelEntries,setFuelEntries}
           </select>
         </Field>
         <Row2>
-          <Field label="Company"><input value={editEntry.company||profile.companyName||""} onChange={e=>setEditEntry(x=>({...x,company:e.target.value}))} placeholder={profile.companyName||"Company name"}/></Field>
+          <Field label="Company"><input value={editEntry.company||profile.companyName||""} readOnly style={{color:T.muted,cursor:"default"}}/></Field>
           <Field label="Assign To">
             <select value={editEntry.unitId} onChange={e=>setEditEntry(x=>({...x,unitId:e.target.value}))}>
               <option value="office">Office / Operations</option>
