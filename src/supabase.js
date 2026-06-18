@@ -7,4 +7,11 @@ if (!url || !key) {
   throw new Error("Missing VITE_SUPABASE_URL or VITE_SUPABASE_ANON_KEY in .env.local");
 }
 
-export const supabase = createClient(url, key);
+export const supabase = createClient(url, key, {
+  auth: {
+    persistSession: true,
+    autoRefreshToken: true,
+    storageKey: "rigledger_auth",
+    storage: window.localStorage,
+  },
+});

@@ -1968,15 +1968,18 @@ ${summaryRows.length>0?`<div class="summary">${summaryRows.map(([l,v])=>`<div cl
 
 // ── AUTH SCREEN ───────────────────────────────────────────────────────────────
 function AuthScreen() {
-  const [email,setEmail]=useState("");
+  const saved=localStorage.getItem("rl_last_email")||"";
+  const [email,setEmail]=useState(saved);
   const [loading,setLoading]=useState(false);
   const [error,setError]=useState("");
   const [sent,setSent]=useState(false);
 
   const sendLink=async()=>{
+    const addr=email.trim();
+    if(!addr)return;
     setLoading(true);setError("");
     const {error:err}=await supabase.auth.signInWithOtp({
-      email:email.trim(),
+      email:addr,
       options:{shouldCreateUser:true,emailRedirectTo:"https://rigledger.vercel.app"}
     });
     setLoading(false);
@@ -1988,6 +1991,7 @@ function AuthScreen() {
       }
       return;
     }
+    localStorage.setItem("rl_last_email",addr);
     setSent(true);
   };
 
@@ -1997,11 +2001,15 @@ function AuthScreen() {
       <div style={{maxWidth:480,margin:"0 auto",minHeight:"100vh",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",background:T.bg,padding:"0 24px"}}>
         <img src={LOGO_URI} alt="The Rig Ledger" style={{height:56,width:"auto",marginBottom:32}}/>
         <div style={{width:"100%",background:T.surface,borderRadius:12,padding:24,border:`1px solid ${T.border}`}}>
-          <div style={{fontWeight:700,fontSize:18,color:T.text,marginBottom:6}}>Sign In</div>
-          <div style={{fontSize:13,color:T.muted,marginBottom:20}}>Your data syncs across all your devices.</div>
 
           {!sent?(
             <>
+              <div style={{fontWeight:700,fontSize:18,color:T.text,marginBottom:4}}>
+                {saved?"Welcome back":"Sign In"}
+              </div>
+              <div style={{fontSize:13,color:T.muted,marginBottom:20}}>
+                {saved?"Tap below to send your sign-in link.":"Your data syncs across all your devices."}
+              </div>
               <Field label="Email Address">
                 <input
                   type="email"
@@ -2009,13 +2017,16 @@ function AuthScreen() {
                   onChange={e=>setEmail(e.target.value)}
                   placeholder="you@example.com"
                   onKeyDown={e=>e.key==="Enter"&&sendLink()}
-                  autoFocus
+                  autoFocus={!saved}
                 />
               </Field>
               {error&&<div style={{color:T.red,fontSize:12,marginTop:8}}>{error}</div>}
               <Btn onClick={sendLink} disabled={loading||!email.trim()} style={{width:"100%",marginTop:16,padding:"12px 0",fontSize:14,justifyContent:"center"}}>
                 {loading?"Sending…":"Send Sign-In Link"}
               </Btn>
+              {saved&&<button onClick={()=>{localStorage.removeItem("rl_last_email");setEmail("");}} style={{width:"100%",marginTop:10,background:"none",color:T.muted,fontSize:12,cursor:"pointer",padding:0}}>
+                Not you? Use a different email
+              </button>}
             </>
           ):(
             <div style={{textAlign:"center",padding:"8px 0"}}>
