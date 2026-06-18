@@ -206,15 +206,16 @@ const fileToB64 = f => new Promise((res,rej)=>{const r=new FileReader();r.onload
 const nowDate = () => new Date().toISOString().slice(0,10);
 
 // ── DEFAULTS ──────────────────────────────────────────────────────────────────
+const DEF_UNIT = {id:"u1",type:"Truck",identifier:"",year:"",make:"",model:"",vin:"",plate:"",plateState:"AL",dot:"",mc:"",ifta:"",iftaBase:"AL",dispatchingCompany:""};
+const DEF_DRIVER = {id:"d1",name:"",phone:"",email:"",cdl:"",cdlState:"AL",unitId:"",trailerIds:[],payType:"Cents Per Mile",cpmRate:"",flatRate:"",hourlyRate:"",percentage:""};
 const DEF_PROFILE = {
-  driverName:"",email:"",phone:"",dot:"",mc:"",ein:"",cdl:"",cdlState:"AL",
   companyName:"",companyAddress:"",companyCity:"",companyState:"AL",companyZip:"",
-  businessType:"Sole Proprietor",
-  bizPhone:"",bizEmail:"",ifta:"",
-  payPeriod:"Weekly",payPeriodStart:"Monday",defaultPayType:"Cents Per Mile",defaultCPM:"",
-  units:[{id:"u1",type:"Truck",identifier:"",year:"",make:"",model:"",vin:"",plate:"",plateState:"AL"}],
+  businessType:"Sole Proprietor",ein:"",
+  bizPhone:"",bizEmail:"",
+  payPeriod:"Weekly",payPeriodStart:"Monday",
+  units:[{...DEF_UNIT}],
   trailers:[],
-  dispatchingCompany:"",
+  drivers:[{...DEF_DRIVER}],
 };
 
 // ── FILE ATTACHMENT COMPONENT ─────────────────────────────────────────────────
@@ -507,13 +508,22 @@ function FuelEntryForm({entry, onChange, profile}) {
 
 // ── PROFILE TAB ───────────────────────────────────────────────────────────────
 function ProfileTab({profile,setProfile}) {
-  const [sec, setSec] = useState("personal");
+  const [sec, setSec] = useState("company");
   const up=(f,v)=>setProfile(p=>({...p,[f]:v}));
-  const addUnit=()=>setProfile(p=>({...p,units:[...p.units,{id:`u${Date.now()}`,type:"Truck",identifier:"",year:"",make:"",model:"",vin:"",plate:"",plateState:"AL"}]}));
+  const addUnit=()=>setProfile(p=>({...p,units:[...p.units,{...DEF_UNIT,id:`u${Date.now()}`,identifier:""}]}));
+  const rmUnit=id=>setProfile(p=>({...p,units:p.units.filter(u=>u.id!==id)}));
   const addTrailer=()=>setProfile(p=>({...p,trailers:[...p.trailers,{id:`t${Date.now()}`,identifier:"",year:"",make:"",model:"",vin:"",plate:"",plateState:"AL",type:"Dry Van"}]}));
+  const rmTrailer=id=>setProfile(p=>({...p,trailers:p.trailers.filter(t=>t.id!==id)}));
+  const addDriver=()=>setProfile(p=>({...p,drivers:[...(p.drivers||[]),{...DEF_DRIVER,id:`d${Date.now()}`,name:""}]}));
+  const rmDriver=id=>setProfile(p=>({...p,drivers:(p.drivers||[]).filter(d=>d.id!==id)}));
   const upUnit=(id,f,v)=>setProfile(p=>({...p,units:p.units.map(u=>u.id===id?{...u,[f]:v}:u)}));
   const upTrailer=(id,f,v)=>setProfile(p=>({...p,trailers:p.trailers.map(t=>t.id===id?{...t,[f]:v}:t)}));
-  const sections=[{id:"personal",label:"Personal"},{id:"company",label:"Company"},{id:"units",label:"Units"},{id:"trailers",label:"Trailers"},{id:"pay",label:"Pay Settings"}];
+  const upDriver=(id,f,v)=>setProfile(p=>({...p,drivers:(p.drivers||[]).map(d=>d.id===id?{...d,[f]:v}:d)}));
+  const upDriverTrailers=(id,trailerIds)=>setProfile(p=>({...p,drivers:(p.drivers||[]).map(d=>d.id===id?{...d,trailerIds}:d)}));
+  const sections=[{id:"company",label:"Company"},{id:"driver",label:"Drivers"},{id:"units",label:"Units"},{id:"trailers",label:"Trailers"},{id:"pay",label:"Pay Settings"}];
+
+  const drivers=profile.drivers||[];
+  const trailers=profile.trailers||[];
 
   return (
     <div style={{padding:"16px 0"}}>
@@ -527,21 +537,10 @@ function ProfileTab({profile,setProfile}) {
         ))}
       </div>
 
-      {sec==="personal" && <Card>
-        <SecHdr title="Personal Information"/>
-        <Row2><Field label="Full Name"><input value={profile.driverName} onChange={e=>up("driverName",e.target.value)}/></Field>
-        <Field label="Phone"><input value={profile.phone} onChange={e=>up("phone",e.target.value)}/></Field></Row2>
-        <Field label="Email"><input value={profile.email} onChange={e=>up("email",e.target.value)}/></Field>
-        <Row2><Field label="CDL Number"><input value={profile.cdl||""} onChange={e=>up("cdl",e.target.value)}/></Field>
-        <Field label="CDL State"><select value={profile.cdlState||"AL"} onChange={e=>up("cdlState",e.target.value)}>{STATES.map(s=><option key={s}>{s}</option>)}</select></Field></Row2>
-      </Card>}
-
       {sec==="company" && <Card>
         <SecHdr title="Company Information"/>
         <Field label="Company / DBA Name"><input value={profile.companyName} onChange={e=>up("companyName",e.target.value)}/></Field>
-        <Row2><Field label="DOT Number"><input value={profile.dot} onChange={e=>up("dot",e.target.value)}/></Field>
-        <Field label="MC Number"><input value={profile.mc} onChange={e=>up("mc",e.target.value)}/></Field></Row2>
-        <Field label="EIN"><input value={profile.ein} onChange={e=>up("ein",e.target.value)} placeholder="XX-XXXXXXX"/></Field>
+        <Field label="EIN"><input value={profile.ein||""} onChange={e=>up("ein",e.target.value)} placeholder="XX-XXXXXXX"/></Field>
         <Field label="Business Type">
           <select value={profile.businessType||"Sole Proprietor"} onChange={e=>up("businessType",e.target.value)}>
             {["Sole Proprietor","Single-Member LLC","Multi-Member LLC","S-Corp","C-Corp","Partnership"].map(x=><option key={x}>{x}</option>)}
@@ -557,43 +556,107 @@ function ProfileTab({profile,setProfile}) {
           <Field label="Business Phone"><input value={profile.bizPhone||""} onChange={e=>up("bizPhone",e.target.value)}/></Field>
           <Field label="Business Email"><input value={profile.bizEmail||""} onChange={e=>up("bizEmail",e.target.value)}/></Field>
         </Row2>
-        <Row2>
-          <Field label="IFTA Account / License #"><input value={profile.ifta||""} onChange={e=>up("ifta",e.target.value)}/></Field>
-          <Field label="Base Jurisdiction (State)"><select value={profile.iftaBase||profile.companyState||"AL"} onChange={e=>up("iftaBase",e.target.value)}>{STATES.map(s=><option key={s}>{s}</option>)}</select></Field>
-        </Row2>
-        <Field label="Dispatching Company / Carrier (if leased on)"><input value={profile.dispatchingCompany||""} onChange={e=>up("dispatchingCompany",e.target.value)} placeholder="Leave blank if independent"/></Field>
       </Card>}
+
+      {sec==="driver" && <div>
+        {drivers.map((d,i)=>(
+          <Card key={d.id} style={{marginBottom:12}}>
+            <SecHdr title={`Driver ${i+1}${d.name?" — "+d.name:""}`}
+              action={drivers.length>1?<button onClick={()=>rmDriver(d.id)} style={{color:T.red,fontSize:12,background:"none"}}>Remove</button>:null}/>
+            <Row2>
+              <Field label="Full Name"><input value={d.name} onChange={e=>upDriver(d.id,"name",e.target.value)}/></Field>
+              <Field label="Phone"><input value={d.phone||""} onChange={e=>upDriver(d.id,"phone",e.target.value)}/></Field>
+            </Row2>
+            <Field label="Email"><input value={d.email||""} onChange={e=>upDriver(d.id,"email",e.target.value)}/></Field>
+            <Row2>
+              <Field label="CDL Number"><input value={d.cdl||""} onChange={e=>upDriver(d.id,"cdl",e.target.value)}/></Field>
+              <Field label="CDL State"><select value={d.cdlState||"AL"} onChange={e=>upDriver(d.id,"cdlState",e.target.value)}>{STATES.map(s=><option key={s}>{s}</option>)}</select></Field>
+            </Row2>
+            <Row2>
+              <Field label="Assigned Truck">
+                <select value={d.unitId||""} onChange={e=>upDriver(d.id,"unitId",e.target.value)}>
+                  <option value="">— None —</option>
+                  {profile.units.map(u=><option key={u.id} value={u.id}>{u.identifier||u.make||`Unit ${u.id}`}</option>)}
+                </select>
+              </Field>
+              <Field label="Trailer 1">
+                <select value={d.trailerIds?.[0]||""} onChange={e=>upDriverTrailers(d.id,[e.target.value,d.trailerIds?.[1]||"",d.trailerIds?.[2]||""].filter(Boolean))}>
+                  <option value="">— None —</option>
+                  {trailers.map(t=><option key={t.id} value={t.id}>{t.identifier||`Trailer ${t.id}`}</option>)}
+                </select>
+              </Field>
+            </Row2>
+            <Row2>
+              <Field label="Trailer 2">
+                <select value={d.trailerIds?.[1]||""} onChange={e=>upDriverTrailers(d.id,[d.trailerIds?.[0]||"",e.target.value,d.trailerIds?.[2]||""].filter(Boolean))}>
+                  <option value="">— None —</option>
+                  {trailers.map(t=><option key={t.id} value={t.id}>{t.identifier||`Trailer ${t.id}`}</option>)}
+                </select>
+              </Field>
+              <Field label="Trailer 3">
+                <select value={d.trailerIds?.[2]||""} onChange={e=>upDriverTrailers(d.id,[d.trailerIds?.[0]||"",d.trailerIds?.[1]||"",e.target.value].filter(Boolean))}>
+                  <option value="">— None —</option>
+                  {trailers.map(t=><option key={t.id} value={t.id}>{t.identifier||`Trailer ${t.id}`}</option>)}
+                </select>
+              </Field>
+            </Row2>
+            <div style={{marginTop:8,paddingTop:10,borderTop:`1px solid ${T.border}`}}>
+              <div style={{fontSize:12,fontWeight:700,color:T.muted,marginBottom:8,textTransform:"uppercase",letterSpacing:".04em"}}>Pay Structure</div>
+              <Field label="Pay Type">
+                <select value={d.payType||"Cents Per Mile"} onChange={e=>upDriver(d.id,"payType",e.target.value)}>
+                  {PAY_TYPES.map(p=><option key={p}>{p}</option>)}
+                </select>
+              </Field>
+              {(d.payType||"Cents Per Mile")==="Cents Per Mile"&&<Field label="CPM Rate ($)"><input type="number" step="0.01" value={d.cpmRate||""} onChange={e=>upDriver(d.id,"cpmRate",e.target.value)} placeholder="0.65"/></Field>}
+              {d.payType==="Flat Rate"&&<Field label="Default Flat Rate ($)"><input type="number" value={d.flatRate||""} onChange={e=>upDriver(d.id,"flatRate",e.target.value)}/></Field>}
+              {d.payType==="Hourly Rate"&&<Field label="Hourly Rate ($)"><input type="number" value={d.hourlyRate||""} onChange={e=>upDriver(d.id,"hourlyRate",e.target.value)}/></Field>}
+              {d.payType==="Percentage"&&<Field label="Percentage (%)"><input type="number" value={d.percentage||""} onChange={e=>upDriver(d.id,"percentage",e.target.value)}/></Field>}
+            </div>
+          </Card>
+        ))}
+        <Btn onClick={addDriver} variant="ghost" style={{width:"100%",padding:12}}>+ Add Driver</Btn>
+      </div>}
 
       {sec==="units" && <div>
         {profile.units.map((u,i)=>(
           <Card key={u.id} style={{marginBottom:10}}>
-            <SecHdr title={`Truck ${i+1}`}/>
+            <SecHdr title={`Truck ${i+1}${u.identifier?" — "+u.identifier:""}`}
+              action={profile.units.length>1?<button onClick={()=>rmUnit(u.id)} style={{color:T.red,fontSize:12,background:"none"}}>Remove</button>:null}/>
             <Row2><Field label="Unit #"><input value={u.identifier} onChange={e=>upUnit(u.id,"identifier",e.target.value)} placeholder="T-101"/></Field>
             <Field label="Year"><input value={u.year} onChange={e=>upUnit(u.id,"year",e.target.value)}/></Field></Row2>
             <Row2><Field label="Make"><input value={u.make} onChange={e=>upUnit(u.id,"make",e.target.value)}/></Field>
             <Field label="Model"><input value={u.model} onChange={e=>upUnit(u.id,"model",e.target.value)}/></Field></Row2>
             <Field label="VIN"><input value={u.vin} onChange={e=>upUnit(u.id,"vin",e.target.value)}/></Field>
             <Row2><Field label="License Plate"><input value={u.plate} onChange={e=>upUnit(u.id,"plate",e.target.value)}/></Field>
-            <Field label="Plate State"><select value={u.plateState} onChange={e=>upUnit(u.id,"plateState",e.target.value)}>{STATES.map(s=><option key={s}>{s}</option>)}</select></Field></Row2>
+            <Field label="Plate State"><select value={u.plateState||"AL"} onChange={e=>upUnit(u.id,"plateState",e.target.value)}>{STATES.map(s=><option key={s}>{s}</option>)}</select></Field></Row2>
+            <div style={{marginTop:8,paddingTop:10,borderTop:`1px solid ${T.border}`}}>
+              <div style={{fontSize:12,fontWeight:700,color:T.muted,marginBottom:8,textTransform:"uppercase",letterSpacing:".04em"}}>Carrier / Regulatory</div>
+              <Row2><Field label="DOT Number"><input value={u.dot||""} onChange={e=>upUnit(u.id,"dot",e.target.value)}/></Field>
+              <Field label="MC Number"><input value={u.mc||""} onChange={e=>upUnit(u.id,"mc",e.target.value)}/></Field></Row2>
+              <Row2><Field label="IFTA License #"><input value={u.ifta||""} onChange={e=>upUnit(u.id,"ifta",e.target.value)}/></Field>
+              <Field label="IFTA Base State"><select value={u.iftaBase||"AL"} onChange={e=>upUnit(u.id,"iftaBase",e.target.value)}>{STATES.map(s=><option key={s}>{s}</option>)}</select></Field></Row2>
+              <Field label="Dispatching Company / Carrier"><input value={u.dispatchingCompany||""} onChange={e=>upUnit(u.id,"dispatchingCompany",e.target.value)} placeholder="Leave blank if operating independently"/></Field>
+            </div>
           </Card>
         ))}
         <Btn onClick={addUnit} variant="ghost" style={{width:"100%",padding:12}}>+ Add Truck</Btn>
       </div>}
 
       {sec==="trailers" && <div>
-        {profile.trailers.map((t,i)=>(
+        {trailers.map((t,i)=>(
           <Card key={t.id} style={{marginBottom:10}}>
-            <SecHdr title={`Trailer ${i+1}`}/>
+            <SecHdr title={`Trailer ${i+1}${t.identifier?" — "+t.identifier:""}`}
+              action={<button onClick={()=>rmTrailer(t.id)} style={{color:T.red,fontSize:12,background:"none"}}>Remove</button>}/>
             <Row2><Field label="Trailer #"><input value={t.identifier} onChange={e=>upTrailer(t.id,"identifier",e.target.value)} placeholder="TR-201"/></Field>
             <Field label="Type"><select value={t.type||"Dry Van"} onChange={e=>upTrailer(t.id,"type",e.target.value)}>{["Dry Van","Reefer","Flatbed","Step Deck","RGN","Tanker","Container"].map(x=><option key={x}>{x}</option>)}</select></Field></Row2>
-            <Row2><Field label="Year"><input value={t.year} onChange={e=>upTrailer(t.id,"year",e.target.value)}/></Field>
-            <Field label="Make"><input value={t.make} onChange={e=>upTrailer(t.id,"make",e.target.value)}/></Field></Row2>
-            <Field label="VIN"><input value={t.vin} onChange={e=>upTrailer(t.id,"vin",e.target.value)}/></Field>
-            <Row2><Field label="License Plate"><input value={t.plate} onChange={e=>upTrailer(t.id,"plate",e.target.value)}/></Field>
+            <Row2><Field label="Year"><input value={t.year||""} onChange={e=>upTrailer(t.id,"year",e.target.value)}/></Field>
+            <Field label="Make"><input value={t.make||""} onChange={e=>upTrailer(t.id,"make",e.target.value)}/></Field></Row2>
+            <Field label="VIN"><input value={t.vin||""} onChange={e=>upTrailer(t.id,"vin",e.target.value)}/></Field>
+            <Row2><Field label="License Plate"><input value={t.plate||""} onChange={e=>upTrailer(t.id,"plate",e.target.value)}/></Field>
             <Field label="Plate State"><select value={t.plateState||"AL"} onChange={e=>upTrailer(t.id,"plateState",e.target.value)}>{STATES.map(s=><option key={s}>{s}</option>)}</select></Field></Row2>
           </Card>
         ))}
-        {profile.trailers.length<3&&<Btn onClick={addTrailer} variant="ghost" style={{width:"100%",padding:12}}>+ Add Trailer ({profile.trailers.length}/3)</Btn>}
+        <Btn onClick={addTrailer} variant="ghost" style={{width:"100%",padding:12}}>+ Add Trailer</Btn>
       </div>}
 
       {sec==="pay" && <Card>
@@ -602,8 +665,9 @@ function ProfileTab({profile,setProfile}) {
         {(profile.payPeriod==="Weekly"||profile.payPeriod==="Bi-Weekly")&&(
           <Field label="Week Starts On"><select value={profile.payPeriodStart||"Monday"} onChange={e=>up("payPeriodStart",e.target.value)}>{["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"].map(d=><option key={d}>{d}</option>)}</select></Field>
         )}
-        <Field label="Default Pay Type"><select value={profile.defaultPayType||"Cents Per Mile"} onChange={e=>up("defaultPayType",e.target.value)}>{PAY_TYPES.map(p=><option key={p}>{p}</option>)}</select></Field>
-        <Field label="Default CPM Rate ($)"><input type="number" value={profile.defaultCPM||""} onChange={e=>up("defaultCPM",e.target.value)} placeholder="0.65"/></Field>
+        <div style={{background:`${T.accent}10`,border:`1px solid ${T.accent}30`,borderRadius:6,padding:"8px 12px",marginTop:8}}>
+          <div style={{fontSize:11,color:T.muted}}>Individual driver pay types and rates are set in the <strong style={{color:T.text}}>Drivers</strong> tab.</div>
+        </div>
       </Card>}
     </div>
   );
@@ -634,10 +698,54 @@ function LoadForm({load,onChange,profile,allLoads}) {
 
       <Card style={{marginBottom:14}}>
         <SecHdr title="Assignment"/>
-        <Field label="Company"><input value={load.company||profile.companyName||""} onChange={e=>up("company",e.target.value)} placeholder={profile.companyName||"Company name"}/></Field>
+        <Field label="Company">
+          <input value={load.company||profile.companyName||""} readOnly style={{color:T.muted,cursor:"default"}}/>
+        </Field>
+        <Field label="Driver">
+          <select value={load.driverId||""} onChange={e=>{
+            const drv=(profile.drivers||[]).find(d=>d.id===e.target.value);
+            onChange({...load,
+              driverId:e.target.value,
+              unitId:drv?.unitId||load.unitId||"",
+              trailerIds:drv?.trailerIds||[],
+              payType:drv?.payType||load.payType||"Cents Per Mile",
+              cpmRate:drv?.cpmRate||load.cpmRate||"",
+              flatRate:drv?.flatRate||load.flatRate||"",
+              hourlyRate:drv?.hourlyRate||load.hourlyRate||"",
+              percentage:drv?.percentage||load.percentage||"",
+            });
+          }}>
+            <option value="">— Select Driver —</option>
+            {(profile.drivers||[]).map(d=><option key={d.id} value={d.id}>{d.name||"(unnamed)"}</option>)}
+          </select>
+        </Field>
         <Row2>
-          <Field label="Truck"><select value={load.unitId} onChange={e=>up("unitId",e.target.value)}>{profile.units.map(u=><option key={u.id} value={u.id}>{u.identifier||u.make||u.id}</option>)}</select></Field>
-          <Field label="Trailer"><select value={load.trailerIds?.[0]||""} onChange={e=>up("trailerIds",[e.target.value])}><option value="">None</option>{profile.trailers.map(t=><option key={t.id} value={t.id}>{t.identifier||t.id}</option>)}</select></Field>
+          <Field label="Truck">
+            <select value={load.unitId||""} onChange={e=>up("unitId",e.target.value)}>
+              <option value="">— None —</option>
+              {profile.units.map(u=><option key={u.id} value={u.id}>{u.identifier||u.make||u.id}</option>)}
+            </select>
+          </Field>
+          <Field label="Trailer 1">
+            <select value={load.trailerIds?.[0]||""} onChange={e=>up("trailerIds",[e.target.value,load.trailerIds?.[1]||"",load.trailerIds?.[2]||""].filter(Boolean))}>
+              <option value="">None</option>
+              {profile.trailers.map(t=><option key={t.id} value={t.id}>{t.identifier||t.id}</option>)}
+            </select>
+          </Field>
+        </Row2>
+        <Row2>
+          <Field label="Trailer 2">
+            <select value={load.trailerIds?.[1]||""} onChange={e=>up("trailerIds",[load.trailerIds?.[0]||"",e.target.value,load.trailerIds?.[2]||""].filter(Boolean))}>
+              <option value="">None</option>
+              {profile.trailers.map(t=><option key={t.id} value={t.id}>{t.identifier||t.id}</option>)}
+            </select>
+          </Field>
+          <Field label="Trailer 3">
+            <select value={load.trailerIds?.[2]||""} onChange={e=>up("trailerIds",[load.trailerIds?.[0]||"",load.trailerIds?.[1]||"",e.target.value].filter(Boolean))}>
+              <option value="">None</option>
+              {profile.trailers.map(t=><option key={t.id} value={t.id}>{t.identifier||t.id}</option>)}
+            </select>
+          </Field>
         </Row2>
       </Card>
 
@@ -738,7 +846,7 @@ function LoadForm({load,onChange,profile,allLoads}) {
         {load.payType==="Cents Per Mile"&&(
           <>
             <Row2>
-              <Field label="CPM Rate ($)"><input type="number" step="0.01" value={load.cpmRate} onChange={e=>up("cpmRate",e.target.value)} placeholder={profile.defaultCPM||"0.65"}/></Field>
+              <Field label="CPM Rate ($)"><input type="number" step="0.01" value={load.cpmRate} onChange={e=>up("cpmRate",e.target.value)} placeholder="0.65"/></Field>
               <Field label="Deadhead Paid?"><select value={load.deadheadPaid?"Yes":"No"} onChange={e=>up("deadheadPaid",e.target.value==="Yes")}><option>No</option><option>Yes</option></select></Field>
             </Row2>
             <div style={{background:T.surface,borderRadius:8,padding:"10px 12px",marginTop:4}}>
@@ -783,17 +891,25 @@ function LoadsTab({loads,setLoads,profile}) {
 
   const newLoad=()=>{
     const last=loads[loads.length-1];
+    const lastDrv=last?.driverId?(profile.drivers||[]).find(d=>d.id===last.driverId):null;
+    const firstDrv=(profile.drivers||[])[0]||null;
+    const drv=lastDrv||firstDrv;
     const draft={
       id:null,loadNumber:genLoadNum(loads.map(l=>l.loadNumber)),status:"Pending",
-      payType:profile.defaultPayType||"Cents Per Mile",
+      company:profile.companyName||"",
+      driverId:drv?.id||"",
+      payType:drv?.payType||"Cents Per Mile",
+      cpmRate:drv?.cpmRate||"",flatRate:drv?.flatRate||"",
+      hourlyRate:drv?.hourlyRate||"",hoursWorked:"",
+      percentage:drv?.percentage||"",grossRevenue:"",
       commodity:"",weight:"",hazmat:false,
       origin:"",originState:"AL",destination:"",destState:"AL",
       pickupDate:"",deliveryDate:"",
       odomStart:last?.odomEnd||"",odomEnd:"",loadedMiles:"",deadheadMiles:"",
-      deadheadPaid:false,flatRate:"",hourlyRate:"",hoursWorked:"",
-      percentage:"",grossRevenue:"",cpmRate:profile.defaultCPM||"",
-      unitId:last?.unitId||profile.units[0]?.id||"u1",
-      trailerIds:[],broker:"",brokerPhone:"",brokerRef:"",
+      deadheadPaid:false,
+      unitId:drv?.unitId||last?.unitId||profile.units[0]?.id||"",
+      trailerIds:drv?.trailerIds||[],
+      broker:"",brokerPhone:"",brokerRef:"",
       notes:"",attachments:[],stateCrossings:[],
     };
     setEditLoad(draft); setView("form");
@@ -1017,7 +1133,12 @@ function LedgerTab({entries,setEntries,loads,profile,fuelEntries,setFuelEntries}
           <Field label="Assign To">
             <select value={editEntry.unitId} onChange={e=>setEditEntry(x=>({...x,unitId:e.target.value}))}>
               <option value="office">Office / Operations</option>
-              {profile.units.map(u=><option key={u.id} value={u.id}>Unit {u.identifier||u.id}</option>)}
+              <optgroup label="── Tractors ──">
+                {[...profile.units].sort((a,b)=>(a.identifier||"").localeCompare(b.identifier||"",undefined,{numeric:true})).map(u=><option key={u.id} value={u.id}>{u.identifier||u.make||u.id}</option>)}
+              </optgroup>
+              {(profile.trailers||[]).length>0&&<optgroup label="── Trailers ──">
+                {[...(profile.trailers||[])].sort((a,b)=>(a.identifier||"").localeCompare(b.identifier||"",undefined,{numeric:true})).map(t=><option key={t.id} value={t.id}>{t.identifier||t.id} ({t.type||"Trailer"})</option>)}
+              </optgroup>}
             </select>
           </Field>
         </Row2>
@@ -1922,10 +2043,15 @@ function AuthScreen() {
 function OnboardingScreen({onComplete}) {
   const [profile,setProfile]=useState({...DEF_PROFILE});
   const [saving,setSaving]=useState(false);
-  const up=(f,v)=>setProfile(p=>({...p,[f]:v}));
+  const upCompany=(f,v)=>setProfile(p=>({...p,[f]:v}));
+  const upDriver=(f,v)=>setProfile(p=>({...p,drivers:[{...(p.drivers||[{...DEF_DRIVER}])[0],[f]:v},...(p.drivers||[{...DEF_DRIVER}]).slice(1)]}));
+  const upUnit=(f,v)=>setProfile(p=>({...p,units:[{...(p.units||[{...DEF_UNIT}])[0],[f]:v},...(p.units||[{...DEF_UNIT}]).slice(1)]}));
+
+  const firstDriver=profile.drivers?.[0]||DEF_DRIVER;
+  const firstUnit=profile.units?.[0]||DEF_UNIT;
 
   const finish=async()=>{
-    if(!profile.driverName.trim()){alert("Please enter your name.");return;}
+    if(!firstDriver.name.trim()){alert("Please enter the driver name.");return;}
     setSaving(true);
     const {data:{user}}=await supabase.auth.getUser();
     if(user){
@@ -1949,37 +2075,53 @@ function OnboardingScreen({onComplete}) {
         <div style={{fontSize:13,color:T.muted,marginBottom:24}}>You can update everything later in the Profile tab.</div>
 
         <Card style={{marginBottom:14}}>
-          <SecHdr title="Your Info"/>
+          <SecHdr title="Driver Info"/>
           <Row2>
-            <Field label="Full Name *"><input value={profile.driverName} onChange={e=>up("driverName",e.target.value)} placeholder="John Smith"/></Field>
-            <Field label="Phone"><input value={profile.phone||""} onChange={e=>up("phone",e.target.value)} placeholder="(555) 000-0000"/></Field>
+            <Field label="Full Name *"><input value={firstDriver.name} onChange={e=>upDriver("name",e.target.value)} placeholder="John Smith"/></Field>
+            <Field label="Phone"><input value={firstDriver.phone||""} onChange={e=>upDriver("phone",e.target.value)} placeholder="(555) 000-0000"/></Field>
           </Row2>
           <Row2>
-            <Field label="CDL #"><input value={profile.cdl||""} onChange={e=>up("cdl",e.target.value)}/></Field>
-            <Field label="CDL State"><select value={profile.cdlState||"AL"} onChange={e=>up("cdlState",e.target.value)}>{STATES_FULL.map(s=><option key={s.code} value={s.code}>{s.name}</option>)}</select></Field>
+            <Field label="CDL #"><input value={firstDriver.cdl||""} onChange={e=>upDriver("cdl",e.target.value)}/></Field>
+            <Field label="CDL State"><select value={firstDriver.cdlState||"AL"} onChange={e=>upDriver("cdlState",e.target.value)}>{STATES_FULL.map(s=><option key={s.code} value={s.code}>{s.name}</option>)}</select></Field>
           </Row2>
         </Card>
 
         <Card style={{marginBottom:14}}>
           <SecHdr title="Company / Business"/>
-          <Field label="Company Name"><input value={profile.companyName||""} onChange={e=>up("companyName",e.target.value)} placeholder="Your LLC or DBA name"/></Field>
+          <Field label="Company Name"><input value={profile.companyName||""} onChange={e=>upCompany("companyName",e.target.value)} placeholder="Your LLC or DBA name"/></Field>
+          <Field label="EIN"><input value={profile.ein||""} onChange={e=>upCompany("ein",e.target.value)} placeholder="XX-XXXXXXX"/></Field>
+        </Card>
+
+        <Card style={{marginBottom:14}}>
+          <SecHdr title="Truck / Unit"/>
           <Row2>
-            <Field label="DOT #"><input value={profile.dot||""} onChange={e=>up("dot",e.target.value)}/></Field>
-            <Field label="MC #"><input value={profile.mc||""} onChange={e=>up("mc",e.target.value)}/></Field>
+            <Field label="Unit # / Identifier"><input value={firstUnit.identifier||""} onChange={e=>upUnit("identifier",e.target.value)} placeholder="T-101"/></Field>
+            <Field label="Year"><input value={firstUnit.year||""} onChange={e=>upUnit("year",e.target.value)}/></Field>
           </Row2>
-          <Field label="EIN / SSN (last 4)"><input value={profile.ein||""} onChange={e=>up("ein",e.target.value)} placeholder="EIN or last 4 of SSN"/></Field>
+          <Row2>
+            <Field label="DOT #"><input value={firstUnit.dot||""} onChange={e=>upUnit("dot",e.target.value)}/></Field>
+            <Field label="MC #"><input value={firstUnit.mc||""} onChange={e=>upUnit("mc",e.target.value)}/></Field>
+          </Row2>
+        </Card>
+
+        <Card style={{marginBottom:14}}>
+          <SecHdr title="Driver Pay"/>
+          <Field label="Pay Type">
+            <select value={firstDriver.payType||"Cents Per Mile"} onChange={e=>upDriver("payType",e.target.value)}>
+              {PAY_TYPES.map(p=><option key={p}>{p}</option>)}
+            </select>
+          </Field>
+          {(firstDriver.payType||"Cents Per Mile")==="Cents Per Mile"&&<Field label="CPM Rate ($)"><input type="number" step="0.01" value={firstDriver.cpmRate||""} onChange={e=>upDriver("cpmRate",e.target.value)} placeholder="0.65"/></Field>}
+          {firstDriver.payType==="Flat Rate"&&<Field label="Default Flat Rate ($)"><input type="number" value={firstDriver.flatRate||""} onChange={e=>upDriver("flatRate",e.target.value)}/></Field>}
+          {firstDriver.payType==="Hourly Rate"&&<Field label="Hourly Rate ($)"><input type="number" value={firstDriver.hourlyRate||""} onChange={e=>upDriver("hourlyRate",e.target.value)}/></Field>}
+          {firstDriver.payType==="Percentage"&&<Field label="Percentage (%)"><input type="number" value={firstDriver.percentage||""} onChange={e=>upDriver("percentage",e.target.value)}/></Field>}
         </Card>
 
         <Card style={{marginBottom:24}}>
-          <SecHdr title="Pay Settings"/>
-          <Field label="Pay Period">
-            <select value={profile.payPeriod||"Weekly"} onChange={e=>up("payPeriod",e.target.value)}>
+          <SecHdr title="Pay Period"/>
+          <Field label="Pay Period Frequency">
+            <select value={profile.payPeriod||"Weekly"} onChange={e=>upCompany("payPeriod",e.target.value)}>
               {PAY_PERIODS.map(p=><option key={p} value={p}>{p}</option>)}
-            </select>
-          </Field>
-          <Field label="Pay Type">
-            <select value={profile.payType||"per_mile"} onChange={e=>up("payType",e.target.value)}>
-              {PAY_TYPES.map(p=><option key={p.id} value={p.id}>{p.label}</option>)}
             </select>
           </Field>
         </Card>
@@ -2018,7 +2160,21 @@ export default function RigBooks() {
     (async()=>{
       const {data}=await supabase.from("user_data").select("*").eq("id",session.user.id).single();
       if(data){
-        setProfile(data.profile||DEF_PROFILE);
+        let p=data.profile||DEF_PROFILE;
+        // Migrate old single-driver profile to drivers array
+        if(!p.drivers||p.drivers.length===0){
+          p={...p,drivers:[{...DEF_DRIVER,id:"d1",
+            name:p.driverName||"",phone:p.phone||"",email:p.email||"",
+            cdl:p.cdl||"",cdlState:p.cdlState||"AL",
+            payType:p.defaultPayType||"Cents Per Mile",cpmRate:p.defaultCPM||"",
+            unitId:p.units?.[0]?.id||"",trailerIds:[],
+          }]};
+        }
+        // Migrate old top-level DOT/MC/IFTA to first unit
+        if(p.units?.[0]&&!p.units[0].dot&&(p.dot||p.mc||p.ifta)){
+          p={...p,units:p.units.map((u,i)=>i===0?{...u,dot:p.dot||"",mc:p.mc||"",ifta:p.ifta||"",iftaBase:p.iftaBase||"AL",dispatchingCompany:p.dispatchingCompany||""}:u)};
+        }
+        setProfile(p);
         setLoads(data.loads||[]);
         setEntries(data.entries||[]);
         setFuelEntries(data.fuel||[]);
@@ -2128,8 +2284,8 @@ export default function RigBooks() {
               {profile.companyName&&<div style={{fontSize:11,color:T.muted,marginTop:3}}>{profile.companyName}</div>}
             </div>
             <div style={{fontSize:11,color:T.muted,textAlign:"right"}}>
-              <div style={{fontWeight:600,color:T.text}}>{profile.driverName||"Owner Operator"}</div>
-              <div>{profile.payPeriod} · {profile.dispatchingCompany||profile.companyName||"Independent"}</div>
+              <div style={{fontWeight:600,color:T.text}}>{(profile.drivers||[])[0]?.name||profile.companyName||"Owner Operator"}</div>
+              <div>{profile.payPeriod} · {profile.units?.[0]?.dispatchingCompany||profile.companyName||"Independent"}</div>
               <div style={{display:"flex",alignItems:"center",gap:8,justifyContent:"flex-end",marginTop:3}}>
                 {syncing&&<span style={{fontSize:10,color:T.accent}}>Syncing…</span>}
                 <button onClick={signOut} style={{fontSize:10,color:T.muted,background:"none",padding:0,cursor:"pointer",textDecoration:"underline"}}>Sign Out</button>
