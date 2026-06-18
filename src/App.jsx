@@ -2284,8 +2284,7 @@ export default function RigBooks() {
               {profile.companyName&&<div style={{fontSize:11,color:T.muted,marginTop:3}}>{profile.companyName}</div>}
             </div>
             <div style={{fontSize:11,color:T.muted,textAlign:"right"}}>
-              <div style={{fontWeight:600,color:T.text}}>{(profile.drivers||[])[0]?.name||profile.companyName||"Owner Operator"}</div>
-              <div style={{display:"flex",alignItems:"center",gap:8,justifyContent:"flex-end",marginTop:3}}>
+              <div style={{display:"flex",alignItems:"center",gap:8,justifyContent:"flex-end"}}>
                 {syncing&&<span style={{fontSize:10,color:T.accent}}>Syncing…</span>}
                 <button onClick={signOut} style={{fontSize:10,color:T.muted,background:"none",padding:0,cursor:"pointer",textDecoration:"underline"}}>Sign Out</button>
               </div>
