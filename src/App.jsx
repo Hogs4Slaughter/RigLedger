@@ -279,79 +279,60 @@ function Attachments({attachments=[], onChange}) {
   );
 }
 
-// ── AI FUEL RECEIPT SCANNER ───────────────────────────────────────────────────
-function FuelReceiptScanner({onDataExtracted}) {
+// ── AI RECEIPT SCANNER (shared) ───────────────────────────────────────────────
+async function callScanAPI(file, mode) {
+  const b64 = await fileToB64(file);
+  const base64Data = b64.split(",")[1];
+  const mediaType = file.type || "image/jpeg";
+  const res = await fetch("/api/scan-receipt", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ imageBase64: base64Data, mediaType, mode }),
+  });
+  const json = await res.json();
+  if (!res.ok || json.error) throw new Error(json.error || "Scan failed");
+  return { parsed: json.data, b64 };
+}
+
+function ReceiptScanner({ mode, label, hint, onDataExtracted }) {
   const [scanning, setScanning] = useState(false);
   const [error, setError] = useState("");
   const fileRef = useRef();
 
-  const scanReceipt = async (file) => {
+  const scan = async (file) => {
     setScanning(true); setError("");
     try {
-      const b64 = await fileToB64(file);
-      const base64Data = b64.split(",")[1];
-      const mediaType = file.type || "image/jpeg";
-
-      const response = await fetch("https://api.anthropic.com/v1/messages", {
-        method:"POST",
-        headers:{"Content-Type":"application/json"},
-        body: JSON.stringify({
-          model:"claude-sonnet-4-20250514",
-          max_tokens:1000,
-          messages:[{
-            role:"user",
-            content:[
-              {type:"image",source:{type:"base64",media_type:mediaType,data:base64Data}},
-              {type:"text",text:`You are a fuel receipt data extractor for a trucking bookkeeping app. Extract all data from this fuel receipt image and return ONLY a JSON object with these fields (use null for missing fields):
-{
-  "date": "YYYY-MM-DD or null",
-  "stationName": "string or null",
-  "stationAddress": "string or null",
-  "stationCity": "string or null",
-  "stationState": "2-letter state code or null",
-  "fuelTypes": [
-    {
-      "type": "Diesel|DEF|Reefer Fuel|CNG|Propane|Other",
-      "gallons": number or null,
-      "pricePerGallon": number or null,
-      "total": number or null
-    }
-  ],
-  "taxPaid": true or false,
-  "totalAmount": number or null,
-  "paymentMethod": "string or null",
-  "receiptNumber": "string or null",
-  "unitNumber": "string or null",
-  "notes": "any other relevant info or null"
-}
-Return ONLY the JSON, no other text.`}
-            ]
-          }]
-        })
-      });
-      const data = await response.json();
-      const text = data.content?.map(c=>c.text||"").join("") || "";
-      const clean = text.replace(/```json|```/g,"").trim();
-      const parsed = JSON.parse(clean);
+      const { parsed, b64 } = await callScanAPI(file, mode);
       onDataExtracted(parsed, b64);
     } catch(err) {
-      setError("Could not read receipt. Please fill in manually.");
+      setError(err.message || "Could not read receipt. Please fill in manually.");
     } finally { setScanning(false); }
   };
 
   return (
     <div>
       <div style={{background:`${T.accent}15`,border:`1px solid ${T.accent}40`,borderRadius:8,padding:"10px 14px",marginBottom:12}}>
-        <div style={{fontSize:12,fontWeight:700,color:T.accent,marginBottom:4}}>Smart Receipt Scan</div>
-        <div style={{fontSize:11,color:T.muted,marginBottom:8}}>Photo a receipt to auto-fill date, station, gallons, and price. Required IFTA fields will be highlighted.</div>
+        <div style={{fontSize:12,fontWeight:700,color:T.accent,marginBottom:4}}>📷 Smart Scan — {label}</div>
+        <div style={{fontSize:11,color:T.muted,marginBottom:8}}>{hint}</div>
         <Btn onClick={()=>fileRef.current.click()} disabled={scanning} variant="ghost" style={{fontSize:12,padding:"6px 14px",width:"100%"}}>
-          {scanning ? "Scanning receipt..." : "Scan Receipt Photo"}
+          {scanning?"Scanning…":"Scan Receipt / Document"}
         </Btn>
-        {error && <div style={{fontSize:11,color:T.red,marginTop:6}}>{error}</div>}
+        {error&&<div style={{fontSize:11,color:T.red,marginTop:6}}>{error}</div>}
       </div>
-      <input ref={fileRef} type="file" accept="image/*" style={{display:"none"}}
-        onChange={e=>{if(e.target.files[0])scanReceipt(e.target.files[0]);e.target.value="";}}/>
+      <input ref={fileRef} type="file" accept="image/*,application/pdf" style={{display:"none"}}
+        onChange={e=>{if(e.target.files[0])scan(e.target.files[0]);e.target.value="";}}/>
     </div>
+  );
+}
+
+function FuelReceiptScanner({onDataExtracted}) {
+  return (
+    <ReceiptScanner
+      mode="fuel"
+      label="Fuel Receipt"
+      hint="Photo a receipt to auto-fill date, station, gallons, and price."
+      onDataExtracted={onDataExtracted}
+    />
   );
 }
 
@@ -1172,6 +1153,27 @@ function LedgerTab({entries,setEntries,loads,profile,fuelEntries,setFuelEntries}
       </div>
       <Card>
         <SecHdr title={editEntry.type==="income"?"Income Entry":"Expense Entry"}/>
+        <ReceiptScanner
+          mode={editEntry.type==="income"?"income":"expense"}
+          label={editEntry.type==="income"?"Settlement / Remittance":"Expense Receipt"}
+          hint={editEntry.type==="income"?"Scan a settlement or remittance doc to auto-fill amount, payer, and date.":"Photo a receipt or invoice to auto-fill date, amount, vendor, and category."}
+          onDataExtracted={(parsed, b64)=>{
+            setEditEntry(x=>{
+              const updates={};
+              if(parsed.date) updates.date=parsed.date;
+              if(parsed.amount) updates.amount=String(parsed.amount);
+              if(parsed.vendor||parsed.payer) updates.vendor=parsed.vendor||parsed.payer||"";
+              if(parsed.description) updates.description=parsed.description;
+              if(parsed.receiptNumber) updates.receiptNumber=parsed.receiptNumber;
+              if(parsed.loadNumber) updates.loadNumber=parsed.loadNumber;
+              if(parsed.notes) updates.notes=parsed.notes;
+              // attach the scanned image
+              const att={id:`att_${Date.now()}`,name:"scanned-receipt.jpg",type:"image/jpeg",size:0,data:b64,added:nowDate()};
+              updates.attachments=[...(x.attachments||[]),att];
+              return {...x,...updates};
+            });
+          }}
+        />
         <Row2><Field label="Date"><input type="date" value={editEntry.date} onChange={e=>setEditEntry(x=>({...x,date:e.target.value}))}/></Field>
         <Field label="Amount ($)"><input type="number" step="0.01" value={editEntry.amount} onChange={e=>setEditEntry(x=>({...x,amount:e.target.value}))}/></Field></Row2>
         <Field label="Category">
