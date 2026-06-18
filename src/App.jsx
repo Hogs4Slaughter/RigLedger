@@ -196,9 +196,8 @@ const Toggle = ({value,onChange,label:lb}) => (
 const fmt$ = n=>"$"+(Number(n)||0).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});
 const fmtMi = n=>(Number(n)||0).toLocaleString("en-US")+" mi";
 const statusColor = s=>({Pending:T.yellow,"In Transit":T.accent,Delivered:T.green,Invoiced:"#A78BFA",Paid:T.green}[s]||T.muted);
-const genLoadNum = (existing=[]) => {
-  const d=new Date(),pad=n=>String(n).padStart(2,"0");
-  const pfx=`${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}`;
+const genLoadNum = (existing=[], pickupDate="") => {
+  const pfx=pickupDate?pickupDate.replace(/-/g,""):nowDate().replace(/-/g,"");
   const seq=existing.filter(n=>n.startsWith(pfx)).length+1;
   return `${pfx}-${String(seq).padStart(4,"0")}`;
 };
@@ -840,7 +839,11 @@ function LoadForm({load,onChange,profile,allLoads}) {
         <Field label="State"><select value={load.originState} onChange={e=>up("originState",e.target.value)}>{STATES.map(s=><option key={s}>{s}</option>)}</select></Field></Row2>
         <Row2><Field label="Destination City / Address"><input value={load.destination} onChange={e=>up("destination",e.target.value)}/></Field>
         <Field label="State"><select value={load.destState} onChange={e=>up("destState",e.target.value)}>{STATES.map(s=><option key={s}>{s}</option>)}</select></Field></Row2>
-        <Row2><Field label="Pickup Date"><input type="date" value={load.pickupDate} onChange={e=>up("pickupDate",e.target.value)}/></Field>
+        <Row2><Field label="Pickup Date"><input type="date" value={load.pickupDate} onChange={e=>{
+          const date=e.target.value;
+          const newNum=!load.id?genLoadNum(allLoads.map(l=>l.loadNumber),date):load.loadNumber;
+          onChange({...load,pickupDate:date,loadNumber:newNum});
+        }}/></Field>
         <Field label="Delivery Date"><input type="date" value={load.deliveryDate} onChange={e=>up("deliveryDate",e.target.value)}/></Field></Row2>
       </Card>
 
