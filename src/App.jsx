@@ -1,6 +1,7 @@
 ﻿import { useState, useEffect, useRef } from "react";
 import { PieChart, Pie, Cell, BarChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend } from "recharts";
 import { supabase } from "./supabase.js";
+import { jsPDF } from "jspdf";
 
 // ── STORAGE (local fallback only) ─────────────────────────────────────────────
 const save = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch(e){} };
@@ -48,6 +49,7 @@ const INCOME_CATEGORIES = [
     {id:"hazmat",label:"Hazmat",desc:"Premium for hauling hazardous materials requiring placards."},
     {id:"oversize",label:"Oversize / OD",desc:"Extra pay for oversize or overweight loads needing permits."},
     {id:"misc_load",label:"Misc Load Charge",desc:"Any other load-specific charge not covered above."},
+    {id:"load_other",label:"Other",desc:"Any load revenue not covered above."},
   ]},
   { id:"reimbursements", label:"Reimbursements", subs:[
     {id:"fuel_reimb",label:"Fuel",desc:"Reimbursement for fuel costs advanced by the driver."},
@@ -65,12 +67,20 @@ const INCOME_CATEGORIES = [
     {id:"fuel_eff",label:"Fuel Efficiency",desc:"Bonus for maintaining MPG above a target threshold."},
     {id:"referral",label:"Referral",desc:"Bonus for referring another driver who gets hired and stays on."},
     {id:"retention",label:"Retention",desc:"Bonus paid for staying with a carrier past a contract milestone."},
+    {id:"bonus_other",label:"Other",desc:"Any bonus or incentive not covered above."},
   ]},
   { id:"passive", label:"Passive & Business Income", subs:[
     {id:"equip_lease",label:"Equipment Lease",desc:"Income from leasing your truck or trailer to another operator."},
     {id:"brokerage",label:"Brokerage Commission",desc:"Commission earned from brokering loads for other carriers."},
     {id:"consulting",label:"Consulting / Training",desc:"Income from advising other drivers or companies on operations."},
     {id:"equip_sale",label:"Equipment Sale",desc:"Proceeds from selling a truck, trailer, or piece of equipment."},
+    {id:"passive_other",label:"Other",desc:"Any passive or business income not covered above."},
+  ]},
+  { id:"escrow_funds_income", label:"Escrow & Fund Returns", subs:[
+    {id:"escrow_release",label:"Escrow Release",desc:"Return of carrier-held maintenance or insurance escrow funds."},
+    {id:"escrow_deposit_return",label:"Security Deposit Return",desc:"Return of a lease escrow or security deposit."},
+    {id:"fuel_advance",label:"Fuel Advance",desc:"Advance from carrier or broker applied to cover fuel costs for a load."},
+    {id:"fund_other",label:"Other Escrow / Fund Return",desc:"Any other escrow release or fund return not listed above."},
   ]},
   { id:"gov_tax", label:"Government & Tax Income", subs:[
     {id:"ifta_refund",label:"IFTA Refund",desc:"Refund from quarterly IFTA filing when fuel taxes paid exceed miles run."},
@@ -78,11 +88,13 @@ const INCOME_CATEGORIES = [
     {id:"hvut_refund",label:"HVUT Refund",desc:"Refund on Heavy Vehicle Use Tax (Form 2290) for a vehicle sold or destroyed."},
     {id:"grant",label:"Grant / PPP",desc:"Government grant or Paycheck Protection Program funds received."},
     {id:"state_refund",label:"State Tax Refund",desc:"State income or apportionment tax refund."},
+    {id:"gov_other",label:"Other",desc:"Any government or tax income not covered above."},
   ]},
   { id:"insurance_legal", label:"Insurance & Legal", subs:[
     {id:"ins_claim",label:"Insurance Claim",desc:"Payout from an insurance claim on your truck, trailer, or cargo."},
     {id:"cargo_settlement",label:"Cargo Settlement",desc:"Settlement received for damaged or lost freight."},
     {id:"legal_settlement",label:"Legal Settlement",desc:"Legal judgment or settlement paid to you."},
+    {id:"ins_other",label:"Other",desc:"Any insurance or legal income not covered above."},
   ]},
   { id:"other_income", label:"Other Income", subs:[
     {id:"per_diem",label:"Per Diem",desc:"Per diem allowance paid by a carrier or broker to cover meals and incidentals while away from home. Separate from the expense-side per diem deduction."},
@@ -100,10 +112,15 @@ const EXPENSE_CATEGORIES = [
     {id:"prev_maint",label:"Preventative Maintenance",desc:"Scheduled services: oil changes, filter replacements, DOT inspections."},
     {id:"repairs",label:"Repairs & Parts",desc:"Unscheduled repairs and replacement parts."},
     {id:"tires",label:"Tires",desc:"New tires, recaps, and tire repair."},
+    {id:"unit_insurance",label:"Unit Insurance",desc:"Physical damage, bobtail, and non-trucking liability insurance on the truck or trailer itself."},
+    {id:"apu",label:"APU",desc:"Auxiliary Power Unit purchase, repair, or maintenance costs."},
     {id:"truck_wash",label:"Truck Wash",desc:"Exterior washes, interior detail, and cab cleaning."},
     {id:"dash_cam",label:"Dash Cam / GPS",desc:"Purchase or subscription cost for cameras and GPS tracking devices."},
     {id:"tools",label:"Tools",desc:"Hand tools, shop equipment, or diagnostic devices for repairs."},
     {id:"oil_lube",label:"Oil & Lubricants",desc:"Engine oil, transmission fluid, grease, and other lubricants."},
+    {id:"parking_equip",label:"Parking",desc:"Truck stop overnight parking fees and secured lot charges."},
+    {id:"scales",label:"Scales",desc:"CAT scale fees and weigh station charges."},
+    {id:"vehicle_other",label:"Other",desc:"Any vehicle or equipment expense not covered above."},
   ]},
   { id:"biz_ops", label:"Business Operations & Compliance", subs:[
     {id:"insurance",label:"Insurance",desc:"Liability, cargo, physical damage, occupational accident, and bobtail insurance premiums."},
@@ -112,10 +129,20 @@ const EXPENSE_CATEGORIES = [
     {id:"drug_test",label:"Drug Testing",desc:"Pre-employment, random, and post-accident drug and alcohol testing."},
     {id:"cdl_renewal",label:"CDL Renewal",desc:"CDL renewal fees, medical exam (DOT physical), and related state DMV fees."},
     {id:"factoring",label:"Factoring",desc:"Fees paid to a factoring company for early invoice payment."},
+    {id:"fuel_card_fee",label:"Fuel Card Use Fee",desc:"Transaction, membership, or processing fees charged by a fuel card provider (EFS, Comcheck, etc.)."},
     {id:"dispatch",label:"Dispatch Fees",desc:"Percentage or flat fee paid to a dispatch service."},
     {id:"assoc_dues",label:"Association Dues",desc:"Membership fees for OOIDA, state trucking associations, or industry groups."},
-    {id:"driver_wages",label:"Driver Wages",desc:"W-2 or 1099 wages paid to employed or contracted drivers. Include regular pay, overtime, and any guaranteed minimums. Keep pay stubs or settlement sheets as supporting records."},
+    {id:"driver_wages",label:"Driver Wages",desc:"W-2 or 1099 wages paid to employed or contracted drivers."},
     {id:"citations",label:"Citations & Violations",desc:"Fines from roadside inspections, weigh station violations, moving violations, or DOT out-of-service orders. Include citation/ticket number in the notes field."},
+    {id:"biz_ops_other",label:"Other",desc:"Any business operations expense not covered above."},
+  ]},
+  { id:"escrow_funds", label:"Escrow & Fund Deductions", subs:[
+    {id:"escrow_maint",label:"Maintenance Escrow",desc:"Carrier-held maintenance reserve deducted from settlement for future repair costs."},
+    {id:"escrow_insurance",label:"Insurance Escrow",desc:"Insurance premium deducted from settlement and held by carrier."},
+    {id:"escrow_fuel",label:"Fuel Advance Repayment",desc:"Repayment of a fuel advance or cash advance deducted from settlement."},
+    {id:"escrow_lease",label:"Lease Escrow / Security Deposit",desc:"Security deposit or lease escrow withheld by carrier for equipment lease."},
+    {id:"driver_emergency_fund",label:"Driver Emergency Fund",desc:"Contribution to a carrier-held or self-managed emergency fund for unexpected road expenses."},
+    {id:"escrow_other",label:"Other Escrow / Fund Deduction",desc:"Any other carrier or lender escrow or fund deduction not listed above."},
   ]},
   { id:"road_living", label:"Road Travel & Living", subs:[
     {id:"meals",label:"Meals (Per Diem)",desc:"Meal expenses while away from home on a run. IRS per diem rate applies — keep receipts."},
@@ -127,6 +154,7 @@ const EXPENSE_CATEGORIES = [
     {id:"airfare",label:"Airfare",desc:"Flights for deadhead truck pickup or business travel."},
     {id:"rental_car",label:"Rental Car",desc:"Vehicle rental for repositioning or business travel."},
     {id:"rideshare",label:"Rideshare",desc:"Uber, Lyft, or taxi costs for business-related transport."},
+    {id:"road_other",label:"Other",desc:"Any road or living expense not covered above."},
   ]},
   { id:"office_tech", label:"Office, Technology & Admin", subs:[
     {id:"communication",label:"Communication",desc:"Cell phone plan, satellite communicator, and other voice/data services used for business."},
@@ -134,6 +162,7 @@ const EXPENSE_CATEGORIES = [
     {id:"office_supplies",label:"Office Supplies",desc:"Printer ink, paper, envelopes, and other administrative consumables."},
     {id:"prof_services",label:"Professional Services",desc:"CPA, bookkeeper, attorney, and other professional fees."},
     {id:"office_space",label:"Office Space",desc:"Home office deduction or rented office/storage space used for business."},
+    {id:"office_other",label:"Other",desc:"Any office or technology expense not covered above."},
   ]},
   { id:"gear_safety", label:"Specialized Gear & Safety", subs:[
     {id:"ppe",label:"Work Apparel / PPE",desc:"Hi-vis vests, steel-toe boots, hard hats, gloves, and other required safety wear."},
@@ -143,6 +172,7 @@ const EXPENSE_CATEGORIES = [
     {id:"cab_tools",label:"Cab Tools",desc:"Flashlights, tire thumpers, mud flap hardware, and misc cab tools."},
     {id:"training",label:"Training Courses",desc:"Defensive driving, HAZMAT recertification, and other trucking-specific training."},
     {id:"hazmat_cert",label:"Hazmat Certification",desc:"HAZMAT endorsement test fees and TSA background check costs."},
+    {id:"gear_other",label:"Other",desc:"Any gear or safety expense not covered above."},
   ]},
 ];
 
@@ -218,63 +248,346 @@ const DEF_PROFILE = {
   drivers:[{...DEF_DRIVER}],
 };
 
-// ── FILE ATTACHMENT COMPONENT ─────────────────────────────────────────────────
-function Attachments({attachments=[], onChange}) {
-  const fileRef = useRef();
-  const [viewing, setViewing] = useState(null);
+// ── STORAGE HELPERS ───────────────────────────────────────────────────────────
+const BUCKET = "RigLedger-files";
 
-  const addFiles = async (files) => {
-    const newAtts = [];
-    for(const f of files) {
-      const b64 = await fileToB64(f);
-      newAtts.push({id:`att_${Date.now()}_${Math.random()}`,name:f.name,type:f.type,size:f.size,data:b64,added:nowDate()});
+async function uploadFile(file, displayName, category, userId) {
+  const ext = file.name.includes(".") ? file.name.split(".").pop() : "";
+  const safeName = displayName.replace(/[^a-zA-Z0-9._\- ]/g,"_") + (ext && !displayName.includes(".") ? `.${ext}` : "");
+  const path = `${userId}/${category}/${Date.now()}_${safeName}`;
+  const { error } = await supabase.storage.from(BUCKET).upload(path, file, { contentType: file.type, upsert: false });
+  if (error) throw error;
+  return { path, displayName: safeName };
+}
+
+async function getSignedUrl(path) {
+  const { data, error } = await supabase.storage.from(BUCKET).createSignedUrl(path, 3600);
+  if (error) return null;
+  return data.signedUrl;
+}
+
+async function deleteFile(path) {
+  await supabase.storage.from(BUCKET).remove([path]);
+}
+
+// Convert a camera photo to a compressed PDF before upload
+// Convert a base64 data URI string to a File object
+async function b64ToFile(b64DataUri, filename, mimeType="image/jpeg") {
+  const res = await fetch(b64DataUri);
+  const blob = await res.blob();
+  return new File([blob], filename, { type: blob.type || mimeType });
+}
+
+// Upload a scanned image (base64) as a PDF to Supabase Storage
+async function uploadScanAsPdf(b64DataUri, baseName, category, userId) {
+  const imageFile = await b64ToFile(b64DataUri, baseName + ".jpg");
+  const pdfFile = await imageToPdf(imageFile, baseName);
+  const { path, displayName } = await uploadFile(pdfFile, baseName, category, userId);
+  return { id:`att_${Date.now()}`, name: displayName, path, type:"application/pdf", size: pdfFile.size, added: nowDate(), category };
+}
+
+async function imageToPdf(file, displayName) {
+  const img = new Image();
+  const url = URL.createObjectURL(file);
+  await new Promise((res, rej) => { img.onload = res; img.onerror = rej; img.src = url; });
+  URL.revokeObjectURL(url);
+
+  // Scale to working size (1000px max) for crop analysis
+  const MAX = 1000;
+  const scale = Math.min(1, MAX / Math.max(img.width, img.height));
+  const sw = Math.round(img.width * scale);
+  const sh = Math.round(img.height * scale);
+
+  const workCanvas = document.createElement("canvas");
+  workCanvas.width = sw; workCanvas.height = sh;
+  const workCtx = workCanvas.getContext("2d");
+  workCtx.drawImage(img, 0, 0, sw, sh);
+
+  // Auto-crop: find bounding box of non-white content
+  const { data } = workCtx.getImageData(0, 0, sw, sh);
+  const THRESH = 238;
+  let top = sh, bottom = 0, left = sw, right = 0;
+  for (let y = 0; y < sh; y++) {
+    for (let x = 0; x < sw; x++) {
+      const i = (y * sw + x) * 4;
+      if (data[i] < THRESH || data[i+1] < THRESH || data[i+2] < THRESH) {
+        if (y < top) top = y;
+        if (y > bottom) bottom = y;
+        if (x < left) left = x;
+        if (x > right) right = x;
+      }
     }
-    onChange([...attachments, ...newAtts]);
-  };
-  const remove = id => onChange(attachments.filter(a=>a.id!==id));
+  }
+  // Fallback to full image if nothing detected
+  if (top >= bottom || left >= right) { top = 0; bottom = sh - 1; left = 0; right = sw - 1; }
+  // Add small padding
+  const PAD = 14;
+  top = Math.max(0, top - PAD);
+  bottom = Math.min(sh - 1, bottom + PAD);
+  left = Math.max(0, left - PAD);
+  right = Math.min(sw - 1, right + PAD);
+
+  const cw = right - left + 1;
+  const ch = bottom - top + 1;
+
+  // Draw cropped result
+  const canvas = document.createElement("canvas");
+  canvas.width = cw; canvas.height = ch;
+  canvas.getContext("2d").drawImage(workCanvas, left, top, cw, ch, 0, 0, cw, ch);
+
+  const jpeg = canvas.toDataURL("image/jpeg", 0.60);
+  const orientation = cw >= ch ? "l" : "p";
+  const pdf = new jsPDF({ orientation, unit: "px", format: [cw, ch], compress: true });
+  pdf.addImage(jpeg, "JPEG", 0, 0, cw, ch);
+  const blob = pdf.output("blob");
+  const pdfName = displayName.replace(/\.[^.]+$/, "") + ".pdf";
+  return new File([blob], pdfName, { type: "application/pdf" });
+}
+
+// ── FILE ATTACHMENT COMPONENT ─────────────────────────────────────────────────
+function Attachments({ attachments=[], onChange, category="receipts", userId }) {
+  const fileRef = useRef();
+  const cameraRef = useRef();
+  const [viewing, setViewing] = useState(null); // {url, name}
+  const [pending, setPending] = useState(null);  // {files:[], index:0, name:"", fromCamera:false}
+  const [uploading, setUploading] = useState(false);
+  const [uploadErr, setUploadErr] = useState("");
+
   const isImg = a => a.type?.startsWith("image/");
 
-  const openFile = a => {
-    if(isImg(a)){setViewing(a);}
-    else{
-      const link=document.createElement("a");
-      link.href=a.data;
-      link.download=a.name;
-      link.click();
+  const handlePick = (files, fromCamera=false) => {
+    if (!files.length) return;
+    const arr = Array.from(files);
+    const defaultName = fromCamera
+      ? `photo_${nowDate()}`
+      : arr[0].name.replace(/\.[^.]+$/,"");
+    setPending({ files: arr, index: 0, name: defaultName, fromCamera });
+  };
+
+  const confirmOne = async () => {
+    if (!userId) { setUploadErr("Sign in required to upload files."); return; }
+    setUploading(true); setUploadErr("");
+    try {
+      const { files, index, name, fromCamera } = pending;
+      let file = files[index];
+      // Convert camera photos to PDF
+      if (fromCamera && file.type.startsWith("image/")) {
+        file = await imageToPdf(file, name);
+      }
+      const { path, displayName } = await uploadFile(file, name, category, userId);
+      const att = { id:`att_${Date.now()}`, name: displayName, path, type: file.type, size: file.size, added: nowDate(), category };
+      onChange([...attachments, att]);
+      const next = index + 1;
+      if (next < files.length) {
+        setPending({ files, index: next, name: files[next].name.replace(/\.[^.]+$/,"") });
+      } else {
+        setPending(null);
+      }
+    } catch(e) {
+      setUploadErr("Upload failed — check connection.");
     }
+    setUploading(false);
+  };
+
+  const openFile = async (a) => {
+    if (a.path) {
+      const url = await getSignedUrl(a.path);
+      if (!url) return;
+      if (isImg(a)) { setViewing({ url, name: a.name }); }
+      else { window.open(url, "_blank"); }
+    } else if (a.data) {
+      // legacy base64
+      if (isImg(a)) { setViewing({ url: a.data, name: a.name }); }
+      else { const l=document.createElement("a"); l.href=a.data; l.download=a.name; l.click(); }
+    }
+  };
+
+  const remove = async (a) => {
+    if (a.path) await deleteFile(a.path);
+    onChange(attachments.filter(x => x.id !== a.id));
   };
 
   return (
     <div>
-      {/* Lightbox viewer */}
-      {viewing&&(
-        <div onClick={()=>setViewing(null)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,.92)",zIndex:9999,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:16}}>
-          <div style={{color:"#fff",fontSize:12,marginBottom:12,opacity:.7}}>{viewing.name} — tap anywhere to close</div>
-          <img src={viewing.data} alt={viewing.name} style={{maxWidth:"100%",maxHeight:"80vh",borderRadius:8,objectFit:"contain"}}/>
-          <a href={viewing.data} download={viewing.name} onClick={e=>e.stopPropagation()} style={{marginTop:16,color:T.accent,fontSize:13,padding:"8px 20px",border:`1px solid ${T.accent}`,borderRadius:8,textDecoration:"none"}}>Download</a>
+      {/* Rename / confirm dialog */}
+      {pending && (
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.7)",zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",padding:24}}>
+          <div style={{background:T.card,borderRadius:12,padding:20,width:"100%",maxWidth:340,boxShadow:"0 8px 32px rgba(0,0,0,.4)"}}>
+            <div style={{fontWeight:700,fontSize:15,marginBottom:4}}>Name this file</div>
+            <div style={{fontSize:11,color:T.muted,marginBottom:12}}>
+              File {pending.index+1} of {pending.files.length} — {(pending.files[pending.index].size/1024).toFixed(0)} KB
+              {pending.fromCamera&&<span style={{color:T.accent,marginLeft:6}}>· Will be saved as PDF</span>}
+            </div>
+            <input
+              value={pending.name}
+              onChange={e=>setPending(p=>({...p,name:e.target.value}))}
+              onKeyDown={e=>e.key==="Enter"&&!uploading&&confirmOne()}
+              autoFocus
+              style={{width:"100%",padding:"10px 12px",borderRadius:8,border:`1px solid ${T.border}`,background:T.surface,color:T.text,fontSize:14,boxSizing:"border-box",marginBottom:10}}
+            />
+            {uploadErr && <div style={{fontSize:11,color:T.red,marginBottom:8}}>{uploadErr}</div>}
+            <div style={{display:"flex",gap:8}}>
+              <button onClick={()=>{setPending(null);setUploadErr("");}} style={{flex:1,padding:"10px",borderRadius:8,border:`1px solid ${T.border}`,background:"transparent",color:T.muted,cursor:"pointer"}}>Cancel</button>
+              <button onClick={confirmOne} disabled={uploading||!pending.name.trim()} style={{flex:2,padding:"10px",borderRadius:8,border:"none",background:T.accent,color:"#fff",fontWeight:700,cursor:uploading?"wait":"pointer",opacity:uploading?0.7:1}}>
+                {uploading?"Uploading…":"Save File"}
+              </button>
+            </div>
+          </div>
         </div>
       )}
+
+      {/* Lightbox viewer */}
+      {viewing && (
+        <div onClick={()=>setViewing(null)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,.92)",zIndex:9999,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:16}}>
+          <div style={{color:"#fff",fontSize:12,marginBottom:12,opacity:.7}}>{viewing.name} — tap anywhere to close</div>
+          <img src={viewing.url} alt={viewing.name} style={{maxWidth:"100%",maxHeight:"80vh",borderRadius:8,objectFit:"contain"}}/>
+          <a href={viewing.url} download={viewing.name} target="_blank" rel="noreferrer" onClick={e=>e.stopPropagation()} style={{marginTop:16,color:T.accent,fontSize:13,padding:"8px 20px",border:`1px solid ${T.accent}`,borderRadius:8,textDecoration:"none"}}>Download</a>
+        </div>
+      )}
+
       <div style={{display:"flex",flexWrap:"wrap",gap:8,marginBottom:8}}>
         {attachments.map(a=>(
-          <div key={a.id} style={{position:"relative",borderRadius:8,overflow:"hidden",border:`1px solid ${T.border}`,background:T.surface,cursor:"pointer"}} onClick={()=>openFile(a)}>
+          <div key={a.id} style={{position:"relative",borderRadius:8,overflow:"hidden",border:`1px solid ${T.border}`,background:T.surface,cursor:"pointer",width:80,height:80}} onClick={()=>openFile(a)}>
             {isImg(a) ? (
-              <img src={a.data} alt={a.name} style={{width:80,height:80,objectFit:"cover",display:"block"}}/>
+              <div style={{width:80,height:80,background:T.border,display:"flex",alignItems:"center",justifyContent:"center"}}>
+                <span style={{fontSize:28}}>🖼</span>
+              </div>
             ) : (
               <div style={{width:80,height:80,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:4}}>
                 <div style={{fontSize:22}}>📄</div>
-                <div style={{fontSize:9,color:T.muted,textAlign:"center",marginTop:2,wordBreak:"break-all"}}>{a.name.slice(0,16)}</div>
               </div>
             )}
-            <button onClick={e=>{e.stopPropagation();remove(a.id);}} style={{position:"absolute",top:2,right:2,width:18,height:18,borderRadius:9,background:"rgba(0,0,0,.7)",color:"#fff",fontSize:10,display:"flex",alignItems:"center",justifyContent:"center",padding:0}}>×</button>
+            <div style={{position:"absolute",bottom:0,left:0,right:0,background:"rgba(0,0,0,.6)",padding:"2px 4px"}}>
+              <div style={{fontSize:8,color:"#fff",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{a.name}</div>
+            </div>
+            <button onClick={e=>{e.stopPropagation();remove(a);}} style={{position:"absolute",top:2,right:2,width:18,height:18,borderRadius:9,background:"rgba(0,0,0,.7)",color:"#fff",fontSize:10,display:"flex",alignItems:"center",justifyContent:"center",padding:0,border:"none",cursor:"pointer"}}>×</button>
           </div>
         ))}
-        <button onClick={()=>fileRef.current.click()} style={{width:80,height:80,borderRadius:8,border:`2px dashed ${T.border}`,background:T.surface,color:T.muted,fontSize:11,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:4}}>
-          <span style={{fontSize:20}}>+</span>
+        <button onClick={()=>cameraRef.current.click()} style={{width:80,height:80,borderRadius:8,border:`2px dashed ${T.accent}`,background:`${T.accent}10`,color:T.accent,fontSize:11,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:4,cursor:"pointer"}}>
+          <span style={{fontSize:20}}>📷</span>
+          <span>Camera</span>
+        </button>
+        <button onClick={()=>fileRef.current.click()} style={{width:80,height:80,borderRadius:8,border:`2px dashed ${T.border}`,background:T.surface,color:T.muted,fontSize:11,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:4,cursor:"pointer"}}>
+          <span style={{fontSize:20}}>📎</span>
           <span>Add File</span>
         </button>
       </div>
-      <input ref={fileRef} type="file" multiple accept="image/*,.pdf,.doc,.docx,.xls,.xlsx" style={{display:"none"}}
-        onChange={e=>{addFiles(Array.from(e.target.files));e.target.value="";}}/>
+      <div style={{fontSize:11,color:T.muted,marginTop:4,lineHeight:1.5}}>
+        Only PDF files are accepted. 📷 Camera photos are automatically converted to PDF before uploading.
+      </div>
+      <input ref={cameraRef} type="file" accept="image/*" capture="environment" style={{display:"none"}}
+        onChange={e=>{handlePick(Array.from(e.target.files),true);e.target.value="";}}/>
+      <input ref={fileRef} type="file" multiple accept="application/pdf" style={{display:"none"}}
+        onChange={e=>{handlePick(Array.from(e.target.files),false);e.target.value="";}}/>
+    </div>
+  );
+}
+
+// ── STORAGE TAB ───────────────────────────────────────────────────────────────
+function StorageTab({ userId }) {
+  const [files, setFiles] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState("all");
+  const [viewing, setViewing] = useState(null);
+
+  useEffect(() => {
+    if (!userId) return;
+    (async () => {
+      setLoading(true);
+      const { data, error } = await supabase.storage.from(BUCKET).list(userId, { limit: 1000, sortBy:{column:"created_at",order:"desc"} });
+      if (error || !data) { setLoading(false); return; }
+      // data is top-level folders: loads/, receipts/, settlements/
+      const all = [];
+      for (const folder of data.filter(f => f.id === null)) {
+        const { data: items } = await supabase.storage.from(BUCKET).list(`${userId}/${folder.name}`, { limit: 500, sortBy:{column:"created_at",order:"desc"} });
+        if (items) items.forEach(f => { if(f.id) all.push({ ...f, category: folder.name, path: `${userId}/${folder.name}/${f.name}` }); });
+      }
+      setFiles(all);
+      setLoading(false);
+    })();
+  }, [userId]);
+
+  const openFile = async (f) => {
+    const url = await getSignedUrl(f.path);
+    if (!url) return;
+    const isImg = f.metadata?.mimetype?.startsWith("image/");
+    if (isImg) setViewing({ url, name: f.name });
+    else window.open(url, "_blank");
+  };
+
+  const removeFile = async (f) => {
+    if (!window.confirm(`Delete "${f.name}"?`)) return;
+    await deleteFile(f.path);
+    setFiles(fs => fs.filter(x => x.path !== f.path));
+  };
+
+  const categories = ["loads","receipts","settlements"];
+  const shown = filter === "all" ? files : files.filter(f => f.category === filter);
+  const totalMB = (files.reduce((s,f) => s + (f.metadata?.size||0), 0) / 1024 / 1024).toFixed(1);
+
+  return (
+    <div style={{padding:"16px 0"}}>
+      {viewing && (
+        <div onClick={()=>setViewing(null)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,.92)",zIndex:9999,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:16}}>
+          <div style={{color:"#fff",fontSize:12,marginBottom:12,opacity:.7}}>{viewing.name} — tap to close</div>
+          <img src={viewing.url} alt={viewing.name} style={{maxWidth:"100%",maxHeight:"80vh",borderRadius:8,objectFit:"contain"}}/>
+          <a href={viewing.url} target="_blank" rel="noreferrer" onClick={e=>e.stopPropagation()} style={{marginTop:16,color:T.accent,fontSize:13,padding:"8px 20px",border:`1px solid ${T.accent}`,borderRadius:8,textDecoration:"none"}}>Download</a>
+        </div>
+      )}
+
+      <Card style={{marginBottom:14}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+          <div>
+            <div style={{fontWeight:700,fontSize:14}}>Cloud Storage</div>
+            <div style={{fontSize:11,color:T.muted,marginTop:2}}>{files.length} file{files.length!==1?"s":""} · {totalMB} MB used</div>
+          </div>
+          <div style={{fontSize:10,color:T.muted,textAlign:"right"}}>
+            <div>Supabase Storage</div>
+            <div style={{color:T.green,fontWeight:600}}>Secure · Private</div>
+          </div>
+        </div>
+        <div style={{marginTop:10,height:6,background:T.border,borderRadius:3,overflow:"hidden"}}>
+          <div style={{height:"100%",background:T.accent,width:`${Math.min(100,(Number(totalMB)/1024)*100)}%`,borderRadius:3}}/>
+        </div>
+        <div style={{fontSize:10,color:T.muted,marginTop:3}}>{totalMB} MB of 1,024 MB used</div>
+      </Card>
+
+      <div style={{display:"flex",gap:6,marginBottom:14,overflowX:"auto"}}>
+        {["all",...categories].map(c=>(
+          <button key={c} onClick={()=>setFilter(c)} style={{whiteSpace:"nowrap",padding:"5px 14px",borderRadius:20,fontSize:11,fontWeight:600,background:filter===c?T.accent:T.card,color:filter===c?"#fff":T.muted,border:`1px solid ${filter===c?"transparent":T.border}`,cursor:"pointer",textTransform:"capitalize"}}>{c==="all"?"All Files":c}</button>
+        ))}
+      </div>
+
+      {loading && <div style={{textAlign:"center",padding:40,color:T.muted}}>Loading files…</div>}
+      {!loading && shown.length === 0 && (
+        <div style={{textAlign:"center",padding:"48px 0",color:T.muted}}>
+          <div style={{fontSize:36,marginBottom:10}}>📁</div>
+          <div style={{fontWeight:600}}>No files {filter!=="all"?`in ${filter}`:""} yet</div>
+          <div style={{fontSize:12,marginTop:6}}>Files attached to loads, expenses, income, and fuel entries appear here.</div>
+        </div>
+      )}
+      {!loading && shown.map(f => {
+        const isImg = f.metadata?.mimetype?.startsWith("image/");
+        const kb = ((f.metadata?.size||0)/1024).toFixed(0);
+        const dateStr = f.created_at ? new Date(f.created_at).toLocaleDateString() : "";
+        return (
+          <Card key={f.path} style={{marginBottom:8}}>
+            <div style={{display:"flex",alignItems:"center",gap:12}}>
+              <div style={{width:40,height:40,borderRadius:8,background:T.surface,border:`1px solid ${T.border}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,flexShrink:0,cursor:"pointer"}} onClick={()=>openFile(f)}>
+                {isImg?"🖼":"📄"}
+              </div>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{fontWeight:600,fontSize:13,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{f.name}</div>
+                <div style={{fontSize:11,color:T.muted,marginTop:1,textTransform:"capitalize"}}>{f.category} · {kb} KB · {dateStr}</div>
+              </div>
+              <div style={{display:"flex",gap:6,flexShrink:0}}>
+                <button onClick={()=>openFile(f)} style={{fontSize:11,padding:"4px 10px",borderRadius:6,border:`1px solid ${T.accent}`,background:"transparent",color:T.accent,cursor:"pointer"}}>View</button>
+                <button onClick={()=>removeFile(f)} style={{fontSize:11,padding:"4px 10px",borderRadius:6,border:`1px solid ${T.red}`,background:"transparent",color:T.red,cursor:"pointer"}}>Delete</button>
+              </div>
+            </div>
+          </Card>
+        );
+      })}
     </div>
   );
 }
@@ -346,7 +659,7 @@ const DEF_FUEL_ENTRY = {
   totalAmount:"", notes:"", attachments:[],
 };
 
-function FuelEntryForm({entry, onChange, profile}) {
+function FuelEntryForm({entry, onChange, profile, userId}) {
   const up = (f,v) => onChange({...entry,[f]:v});
   const upLine = (ft,f,v) => {
     const line = {...entry.fuelLines[ft],[f]:v};
@@ -383,8 +696,13 @@ function FuelEntryForm({entry, onChange, profile}) {
         updates.fuelLines[key] = {on:true,gallons:ft.gallons||"",ppg:ft.pricePerGallon||"",total:ft.total||""};
       }
     }
-    if(imgB64) updates.attachments=[...entry.attachments,{id:`att_${Date.now()}`,name:"receipt_scan.jpg",type:"image/jpeg",data:imgB64,added:nowDate()}];
-    onChange({...entry,...updates});
+    if(imgB64 && userId) {
+      uploadScanAsPdf(imgB64,"fuel_receipt","receipts",userId)
+        .then(att=>onChange({...entry,...updates,attachments:[...entry.attachments,att]}))
+        .catch(err=>{ console.error("Fuel scan PDF upload failed:",err); onChange({...entry,...updates}); });
+    } else {
+      onChange({...entry,...updates});
+    }
   };
 
   // IFTA validation
@@ -477,7 +795,7 @@ function FuelEntryForm({entry, onChange, profile}) {
 
       <Card style={{marginBottom:12}}>
         <SecHdr title="Attachments"/>
-        <Attachments attachments={entry.attachments} onChange={v=>up("attachments",v)}/>
+        <Attachments attachments={entry.attachments} onChange={v=>up("attachments",v)} category="receipts" userId={userId}/>
       </Card>
 
       <Field label="Notes">
@@ -488,7 +806,7 @@ function FuelEntryForm({entry, onChange, profile}) {
 }
 
 // ── PROFILE TAB ───────────────────────────────────────────────────────────────
-function ProfileTab({profile,setProfile}) {
+function ProfileTab({profile,setProfile,userId}) {
   const [sec, setSec] = useState("company");
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(profile);
@@ -513,7 +831,7 @@ function ProfileTab({profile,setProfile}) {
   const upTrailer=(id,f,v)=>setDraft(p=>({...p,trailers:p.trailers.map(t=>t.id===id?{...t,[f]:v}:t)}));
   const upDriver=(id,f,v)=>setDraft(p=>({...p,drivers:(p.drivers||[]).map(dr=>dr.id===id?{...dr,[f]:v}:dr)}));
   const upDriverTrailers=(id,trailerIds)=>setDraft(p=>({...p,drivers:(p.drivers||[]).map(dr=>dr.id===id?{...dr,trailerIds}:dr)}));
-  const sections=[{id:"company",label:"Company"},{id:"driver",label:"Drivers"},{id:"units",label:"Units"},{id:"trailers",label:"Trailers"},{id:"pay",label:"Pay Settings"}];
+  const sections=[{id:"company",label:"Company"},{id:"driver",label:"Drivers"},{id:"units",label:"Units"},{id:"trailers",label:"Trailers"},{id:"storage",label:"Storage"}];
 
   const drivers=d.drivers||[];
   const trailers=d.trailers||[];
@@ -712,22 +1030,14 @@ function ProfileTab({profile,setProfile}) {
         {!ro&&<Btn onClick={addTrailer} variant="ghost" style={{width:"100%",padding:12}}>+ Add Trailer</Btn>}
       </div>}
 
-      {sec==="pay" && <Card style={{opacity:ro?.9:1}}>
-        <SecHdr title="Pay Period Settings"/>
-        <Field label="Pay Period Frequency"><select value={d.payPeriod} disabled={ro} onChange={e=>up("payPeriod",e.target.value)}>{PAY_PERIODS.map(p=><option key={p}>{p}</option>)}</select></Field>
-        {(d.payPeriod==="Weekly"||d.payPeriod==="Bi-Weekly")&&(
-          <Field label="Week Starts On"><select value={d.payPeriodStart||"Monday"} disabled={ro} onChange={e=>up("payPeriodStart",e.target.value)}>{["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"].map(x=><option key={x}>{x}</option>)}</select></Field>
-        )}
-        <div style={{background:`${T.accent}10`,border:`1px solid ${T.accent}30`,borderRadius:6,padding:"8px 12px",marginTop:8}}>
-          <div style={{fontSize:11,color:T.muted}}>Individual driver pay types and rates are set in the <strong style={{color:T.text}}>Drivers</strong> tab.</div>
-        </div>
-      </Card>}
+      {sec==="storage" && <StorageTab userId={userId}/>}
+
     </div>
   );
 }
 
 // ── LOAD FORM ─────────────────────────────────────────────────────────────────
-function LoadForm({load,onChange,profile,allLoads,locked=false}) {
+function LoadForm({load,onChange,profile,allLoads,locked=false,userId}) {
   const up=(f,v)=>{if(!locked)onChange({...load,[f]:v});};
   const ro=locked;
   const odomDelta=(Number(load.odomEnd)||0)-(Number(load.odomStart)||0);
@@ -938,7 +1248,7 @@ function LoadForm({load,onChange,profile,allLoads,locked=false}) {
       <Card style={{marginBottom:14}}>
         <SecHdr title="Documents & Attachments"/>
         <div style={{fontSize:11,color:T.muted,marginBottom:8}}>Attach BOL, rate confirmation, POD, or any other load documents.</div>
-        <Attachments attachments={load.attachments||[]} onChange={v=>up("attachments",v)}/>
+        <Attachments attachments={load.attachments||[]} onChange={v=>up("attachments",v)} category="loads" userId={userId}/>
       </Card>
 
       <Card>
@@ -950,10 +1260,12 @@ function LoadForm({load,onChange,profile,allLoads,locked=false}) {
 }
 
 // ── LOADS TAB ─────────────────────────────────────────────────────────────────
-function LoadsTab({loads,setLoads,profile}) {
+function LoadsTab({loads,setLoads,profile,userId}) {
   const [view,setView]=useState("list");
   const [editLoad,setEditLoad]=useState(null);
   const [filter,setFilter]=useState("All");
+  const [hidePaid,setHidePaid]=useState(true);
+  const originalStatus=useRef(null);
 
   const newLoad=()=>{
     const last=loads[loads.length-1];
@@ -975,10 +1287,12 @@ function LoadsTab({loads,setLoads,profile}) {
       deadheadPaid:true,
       unitId:drv?.unitId||last?.unitId||profile.units[0]?.id||"",
       trailerIds:drv?.trailerIds||[],
-      broker:"",brokerPhone:"",brokerRef:"",
+      broker:(()=>{const u=profile.units.find(u=>u.id===(drv?.unitId||last?.unitId||profile.units[0]?.id||""));return(u&&!u.useCompanyAuthority&&u.dispatchingCompany)?u.dispatchingCompany:"";})(),
+      brokerPhone:(()=>{const u=profile.units.find(u=>u.id===(drv?.unitId||last?.unitId||profile.units[0]?.id||""));return(u&&!u.useCompanyAuthority&&u.dispatchingCompany)?u.dispatchingPhone||"":"";})(),
+      brokerRef:"",
       notes:"",attachments:[],stateCrossings:[],
     };
-    setEditLoad(draft); setView("form");
+    originalStatus.current=null; setEditLoad(draft); setView("form");
   };
 
   const saveLoad=()=>{
@@ -995,18 +1309,18 @@ function LoadsTab({loads,setLoads,profile}) {
     return 0;
   };
 
-  const filtered=filter==="All"?[...loads].reverse():[...loads].filter(l=>l.status===filter).reverse();
+  const filtered=(filter==="All"?[...loads]:[...loads].filter(l=>l.status===filter)).filter(l=>!hidePaid||l.status!=="Paid").reverse();
 
   if(view==="form"&&editLoad) return (
     <div style={{padding:"16px 0"}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
         <button onClick={()=>{setView("list");setEditLoad(null);}} style={{background:"none",color:T.muted,fontSize:13}}>← Back</button>
-        {editLoad.status==="Paid"&&editLoad.id
+        {originalStatus.current==="Paid"
           ? <span style={{fontSize:12,color:T.green,fontWeight:700}}>🔒 Paid — Read Only</span>
           : <Btn onClick={saveLoad} variant="success">Save Load</Btn>
         }
       </div>
-      <LoadForm load={editLoad} onChange={editLoad.status==="Paid"&&editLoad.id?()=>{}:setEditLoad} profile={profile} allLoads={loads} locked={!!(editLoad.status==="Paid"&&editLoad.id)}/>
+      <LoadForm load={editLoad} onChange={originalStatus.current==="Paid"?()=>{}:setEditLoad} profile={profile} allLoads={loads} locked={originalStatus.current==="Paid"} userId={userId}/>
     </div>
   );
 
@@ -1018,7 +1332,13 @@ function LoadsTab({loads,setLoads,profile}) {
             <button key={s} onClick={()=>setFilter(s)} style={{whiteSpace:"nowrap",padding:"5px 12px",borderRadius:20,fontSize:11,fontWeight:600,background:filter===s?statusColor(s)||T.accent:T.card,color:filter===s?"#fff":T.muted,border:`1px solid ${filter===s?"transparent":T.border}`}}>{s}</button>
           ))}
         </div>
-        <Btn onClick={newLoad} style={{whiteSpace:"nowrap",marginLeft:8}}>+ New Load</Btn>
+        <div style={{display:"flex",alignItems:"center",gap:8,marginLeft:8}}>
+          <label style={{display:"flex",alignItems:"center",gap:5,cursor:"pointer",fontSize:11,color:hidePaid?T.accent:T.muted,userSelect:"none",whiteSpace:"nowrap"}}>
+            <input type="checkbox" checked={hidePaid} onChange={e=>setHidePaid(e.target.checked)} style={{accentColor:T.accent}}/>
+            Hide paid
+          </label>
+          <Btn onClick={newLoad} style={{whiteSpace:"nowrap"}}>+ New Load</Btn>
+        </div>
       </div>
       {filtered.length===0&&<div style={{textAlign:"center",padding:"48px 0",color:T.muted}}><div style={{fontSize:36,marginBottom:10}}>📋</div><div style={{fontWeight:600}}>No loads yet</div></div>}
       {filtered.map(l=>(
@@ -1035,7 +1355,7 @@ function LoadsTab({loads,setLoads,profile}) {
                 {l.status==="Paid"?(
                   <span style={{fontSize:10,padding:"2px 8px",borderRadius:4,background:`${T.green}20`,color:T.green,fontWeight:700,border:`1px solid ${T.green}50`}}>🔒 Locked</span>
                 ):(
-                  <button onClick={()=>{setEditLoad({...l});setView("form");}} style={{fontSize:11,padding:"2px 10px",borderRadius:4,border:`1px solid ${T.accent}`,background:"transparent",color:T.accent,cursor:"pointer"}}>Edit</button>
+                  <button onClick={()=>{originalStatus.current=l.status;setEditLoad({...l});setView("form");}} style={{fontSize:11,padding:"2px 10px",borderRadius:4,border:`1px solid ${T.accent}`,background:"transparent",color:T.accent,cursor:"pointer"}}>Edit</button>
                 )}
                 <button onClick={()=>{if(window.confirm("Delete this load?"))setLoads(ls=>ls.filter(x=>x.id!==l.id));}} style={{fontSize:11,padding:"2px 10px",borderRadius:4,border:`1px solid ${T.red}`,background:"transparent",color:T.red,cursor:"pointer"}}>Delete</button>
               </div>
@@ -1057,17 +1377,20 @@ function LoadsTab({loads,setLoads,profile}) {
 }
 
 // ── LEDGER TAB ────────────────────────────────────────────────────────────────
-function LedgerTab({entries,setEntries,loads,profile,fuelEntries,setFuelEntries}) {
+function LedgerTab({entries,setEntries,loads,profile,fuelEntries,setFuelEntries,userId,settlements,setSettlements}) {
   const [tab,setTab]=useState("expense");
   const [showForm,setShowForm]=useState(false);
   const [editEntry,setEditEntry]=useState(null);
   const [showFuelForm,setShowFuelForm]=useState(false);
   const [editFuel,setEditFuel]=useState(null);
   const [showUpcoming,setShowUpcoming]=useState(false);
+  const [hideReconciled,setHideReconciled]=useState(true);
+  const [showSettlementForm,setShowSettlementForm]=useState(false);
+  const [editSettlement,setEditSettlement]=useState(null);
 
   const lastExp=[...entries].reverse().find(e=>e.type==="expense");
   const lastInc=[...entries].reverse().find(e=>e.type==="income");
-  const blank=type=>({type,date:nowDate(),categoryId:"",subcategoryId:"",amount:"",description:"",loadNumber:"",unitId:"office",vendor:"",notes:"",attachments:[],recurring:false,recurringFreq:"Monthly"});
+  const blank=type=>({type,date:nowDate(),categoryId:"",subcategoryId:"",amount:"",description:"",loadNumber:"",unitId:"office",vendor:"",notes:"",attachments:[],recurring:false,recurringFreq:"Monthly",reconciled:false});
 
   const openNew=type=>{
     const last=type==="expense"?lastExp:lastInc;
@@ -1147,9 +1470,57 @@ function LedgerTab({entries,setEntries,loads,profile,fuelEntries,setFuelEntries}
     setEntries(es=>[...es,...generated]);
   };
   const allEntries=[
-    ...entries.filter(e=>e.type===tab&&(showUpcoming||!e.recurringId||e.date<=today)),
-    ...(tab==="expense"?fuelEntries.map(fe=>({...fe,type:"fuel",amount:fuelTotal(fe)})):[]),
+    ...entries.filter(e=>e.type===tab&&(showUpcoming||!e.recurringId||e.date<=today)&&(!hideReconciled||!e.reconciled)),
+    ...(tab==="expense"?fuelEntries.map(fe=>({...fe,type:"fuel",amount:fuelTotal(fe)})).filter(fe=>!hideReconciled||!fe.reconciled):[]),
   ].sort((a,b)=>b.date?.localeCompare(a.date||"")).slice(0,200);
+
+  const saveSettlement=()=>{
+    if(editSettlement.id){
+      setSettlements(ss=>ss.map(s=>s.id===editSettlement.id?editSettlement:s));
+    } else {
+      setSettlements(ss=>[...ss,{...editSettlement,id:`stl_${Date.now()}`}]);
+    }
+    setShowSettlementForm(false); setEditSettlement(null);
+  };
+
+  if(showSettlementForm&&editSettlement) return (
+    <div style={{padding:"16px 0"}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+        <button onClick={()=>{setShowSettlementForm(false);setEditSettlement(null);}} style={{background:"none",color:T.muted,fontSize:13}}>← Back</button>
+        <Btn onClick={saveSettlement} variant="success">Save Settlement</Btn>
+      </div>
+      <Card style={{marginBottom:12}}>
+        <SecHdr title="Settlement Details"/>
+        <Row2>
+          <Field label="Settlement Date"><input type="date" value={editSettlement.date} onChange={e=>setEditSettlement(x=>({...x,date:e.target.value}))}/></Field>
+          <Field label="Assign To">
+            <select value={editSettlement.unitId} onChange={e=>setEditSettlement(x=>({...x,unitId:e.target.value}))}>
+              {profile.units.map(u=><option key={u.id} value={u.id}>{u.identifier||u.make||u.id}</option>)}
+            </select>
+          </Field>
+        </Row2>
+        <Field label="Carrier / Payer"><input value={editSettlement.carrier} onChange={e=>setEditSettlement(x=>({...x,carrier:e.target.value}))} placeholder="Carrier or broker name"/></Field>
+        <Row2>
+          <Field label="Period Start"><input type="date" value={editSettlement.periodStart} onChange={e=>setEditSettlement(x=>({...x,periodStart:e.target.value}))}/></Field>
+          <Field label="Period End"><input type="date" value={editSettlement.periodEnd} onChange={e=>setEditSettlement(x=>({...x,periodEnd:e.target.value}))}/></Field>
+        </Row2>
+        <Row2>
+          <Field label="Gross Pay ($)"><input type="number" step="0.01" value={editSettlement.grossPay} onChange={e=>setEditSettlement(x=>({...x,grossPay:e.target.value}))} placeholder="0.00"/></Field>
+          <Field label="Total Deductions ($)"><input type="number" step="0.01" value={editSettlement.deductions} onChange={e=>setEditSettlement(x=>({...x,deductions:e.target.value}))} placeholder="0.00"/></Field>
+        </Row2>
+        <Field label="Net Pay ($)">
+          <input type="number" step="0.01" value={editSettlement.netPay} onChange={e=>setEditSettlement(x=>({...x,netPay:e.target.value}))}
+            placeholder={editSettlement.grossPay&&editSettlement.deductions?`Auto: ${fmt$(Number(editSettlement.grossPay)-Number(editSettlement.deductions))}`:"0.00"}/>
+        </Field>
+        <Field label="Notes"><textarea value={editSettlement.notes} onChange={e=>setEditSettlement(x=>({...x,notes:e.target.value}))} rows={2} style={{resize:"vertical"}} placeholder="Pay period summary, load count, notes..."/></Field>
+      </Card>
+      <Card style={{marginBottom:12}}>
+        <SecHdr title="Settlement Document"/>
+        <div style={{fontSize:11,color:T.muted,marginBottom:8}}>Upload the settlement PDF or photo from your carrier.</div>
+        <Attachments attachments={editSettlement.attachments||[]} onChange={v=>setEditSettlement(x=>({...x,attachments:v}))} category="settlements" userId={userId}/>
+      </Card>
+    </div>
+  );
 
   if(showFuelForm&&editFuel) return (
     <div style={{padding:"16px 0"}}>
@@ -1157,7 +1528,7 @@ function LedgerTab({entries,setEntries,loads,profile,fuelEntries,setFuelEntries}
         <button onClick={()=>{setShowFuelForm(false);setEditFuel(null);}} style={{background:"none",color:T.muted,fontSize:13}}>← Back</button>
         <Btn onClick={saveFuel} variant="success">Save Fuel Entry</Btn>
       </div>
-      <FuelEntryForm entry={editFuel} onChange={setEditFuel} profile={profile}/>
+      <FuelEntryForm entry={editFuel} onChange={setEditFuel} profile={profile} userId={userId}/>
     </div>
   );
 
@@ -1174,20 +1545,21 @@ function LedgerTab({entries,setEntries,loads,profile,fuelEntries,setFuelEntries}
           label={editEntry.type==="income"?"Settlement / Remittance":"Expense Receipt"}
           hint={editEntry.type==="income"?"Scan a settlement or remittance doc to auto-fill amount, payer, and date.":"Photo a receipt or invoice to auto-fill date, amount, vendor, and category."}
           onDataExtracted={(parsed, b64)=>{
-            setEditEntry(x=>{
-              const updates={};
-              if(parsed.date) updates.date=parsed.date;
-              if(parsed.amount) updates.amount=String(parsed.amount);
-              if(parsed.vendor||parsed.payer) updates.vendor=parsed.vendor||parsed.payer||"";
-              if(parsed.description) updates.description=parsed.description;
-              if(parsed.receiptNumber) updates.receiptNumber=parsed.receiptNumber;
-              if(parsed.loadNumber) updates.loadNumber=parsed.loadNumber;
-              if(parsed.notes) updates.notes=parsed.notes;
-              // attach the scanned image
-              const att={id:`att_${Date.now()}`,name:"scanned-receipt.jpg",type:"image/jpeg",size:0,data:b64,added:nowDate()};
-              updates.attachments=[...(x.attachments||[]),att];
-              return {...x,...updates};
-            });
+            const updates={};
+            if(parsed.date) updates.date=parsed.date;
+            if(parsed.amount) updates.amount=String(parsed.amount);
+            if(parsed.vendor||parsed.payer) updates.vendor=parsed.vendor||parsed.payer||"";
+            if(parsed.description) updates.description=parsed.description;
+            if(parsed.receiptNumber) updates.receiptNumber=parsed.receiptNumber;
+            if(parsed.loadNumber) updates.loadNumber=parsed.loadNumber;
+            if(parsed.notes) updates.notes=parsed.notes;
+            setEditEntry(x=>({...x,...updates}));
+            if(b64&&userId){
+              const cat=editEntry.type==="income"?"settlements":"receipts";
+              uploadScanAsPdf(b64,"scanned_receipt",cat,userId)
+                .then(att=>setEditEntry(e=>({...e,attachments:[...(e.attachments||[]),att]})))
+                .catch(err=>console.error("Scan PDF upload failed:",err));
+            }
           }}
         />
         <Row2><Field label="Date"><input type="date" value={editEntry.date} onChange={e=>setEditEntry(x=>({...x,date:e.target.value}))}/></Field>
@@ -1252,8 +1624,14 @@ function LedgerTab({entries,setEntries,loads,profile,fuelEntries,setFuelEntries}
           </Field>
         )}
         <Field label="Notes"><textarea value={editEntry.notes||""} onChange={e=>setEditEntry(x=>({...x,notes:e.target.value}))} rows={2} style={{resize:"vertical"}}/></Field>
+        <Field label="Reconciled">
+          <label style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer",fontSize:13}}>
+            <input type="checkbox" checked={!!editEntry.reconciled} onChange={e=>setEditEntry(x=>({...x,reconciled:e.target.checked}))} style={{accentColor:"#22a06b",width:16,height:16}}/>
+            Mark as reconciled with settlement / bank statement
+          </label>
+        </Field>
         <Field label="Attachments">
-          <Attachments attachments={editEntry.attachments||[]} onChange={v=>setEditEntry(x=>({...x,attachments:v}))}/>
+          <Attachments attachments={editEntry.attachments||[]} onChange={v=>setEditEntry(x=>({...x,attachments:v}))} category={editEntry.type==="income"?"settlements":"receipts"} userId={userId}/>
         </Field>
       </Card>
     </div>
@@ -1263,102 +1641,138 @@ function LedgerTab({entries,setEntries,loads,profile,fuelEntries,setFuelEntries}
     <div style={{padding:"16px 0"}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
         <div style={{display:"flex",gap:0,border:`1px solid ${T.border}`,borderRadius:8,overflow:"hidden"}}>
-          {["expense","income"].map(t=>(
-            <button key={t} onClick={()=>setTab(t)} style={{padding:"8px 20px",fontSize:12,fontWeight:700,textTransform:"uppercase",letterSpacing:".04em",background:tab===t?(t==="expense"?T.red:T.green):T.card,color:tab===t?"#fff":(t==="income"?T.green:T.red),borderRadius:0}}>{t}</button>
+          {[{id:"expense",label:"Expense"},{id:"income",label:"Income"},{id:"settlements",label:"Settlements"}].map(t=>(
+            <button key={t.id} onClick={()=>setTab(t.id)} style={{padding:"8px 14px",fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:".04em",background:tab===t.id?(t.id==="expense"?T.red:t.id==="income"?T.green:T.accent):T.card,color:tab===t.id?"#fff":(t.id==="income"?T.green:t.id==="settlements"?T.accent:T.red),borderRadius:0}}>{t.label}</button>
           ))}
         </div>
         <div style={{display:"flex",gap:6}}>
           {tab==="expense"&&<Btn onClick={()=>{const last=fuelEntries[fuelEntries.length-1];setEditFuel({...DEF_FUEL_ENTRY,unitId:last?.unitId||profile.units[0]?.id||""});setShowFuelForm(true);}} variant="ghost" style={{fontSize:12,padding:"8px 12px",whiteSpace:"nowrap",color:T.red,borderColor:T.red}}>+ Fuel</Btn>}
-          <Btn onClick={()=>openNew(tab)} style={{whiteSpace:"nowrap"}}>+ {tab==="income"?"Income":"Expense"}</Btn>
+          {tab==="settlements"
+            ? <Btn onClick={()=>{setEditSettlement({id:null,date:nowDate(),carrier:"",driverName:"",unitId:profile.units[0]?.id||"",periodStart:"",periodEnd:"",grossPay:"",deductions:"",netPay:"",notes:"",attachments:[]});setShowSettlementForm(true);}} style={{whiteSpace:"nowrap"}}>+ Settlement</Btn>
+            : <Btn onClick={()=>openNew(tab)} style={{whiteSpace:"nowrap"}}>+ {tab==="income"?"Income":"Expense"}</Btn>
+          }
         </div>
       </div>
 
-      {expiredSeries.map(group=>{
-        const last=group.reduce((a,b)=>a.date>b.date?a:b);
-        const label=last.description||last.vendor||last.categoryId||"Recurring payment";
-        return(
-          <div key={last.recurringId} style={{marginBottom:10,padding:"12px 14px",borderRadius:10,background:`${T.accent}15`,border:`1px solid ${T.accent}44`,display:"flex",justifyContent:"space-between",alignItems:"center",gap:10}}>
-            <div>
-              <div style={{fontSize:13,fontWeight:700,color:T.text}}>🔁 {label}</div>
-              <div style={{fontSize:11,color:T.muted,marginTop:2}}>Recurring series ended — continue {last.recurringFreq||"Monthly"}?</div>
-            </div>
-            <div style={{display:"flex",gap:6,flexShrink:0}}>
-              <button onClick={()=>renewSeries(group)} style={{fontSize:11,padding:"4px 12px",borderRadius:6,border:`1px solid ${T.accent}`,background:T.accent,color:"#fff",cursor:"pointer",fontWeight:600}}>Renew</button>
-              <button onClick={()=>setEntries(es=>es.map(e=>e.recurringId===last.recurringId?{...e,recurringId:null}:e))} style={{fontSize:11,padding:"4px 10px",borderRadius:6,border:`1px solid ${T.border}`,background:"transparent",color:T.muted,cursor:"pointer"}}>Dismiss</button>
-            </div>
-          </div>
-        );
-      })}
+      {/* Hide reconciled toggle — only for expense/income */}
+      {tab!=="settlements"&&<div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
+        <label style={{display:"flex",alignItems:"center",gap:6,cursor:"pointer",fontSize:12,color:hideReconciled?T.accent:T.muted,userSelect:"none"}}>
+          <input type="checkbox" checked={hideReconciled} onChange={e=>setHideReconciled(e.target.checked)} style={{accentColor:T.accent}}/>
+          Hide reconciled entries
+        </label>
+      </div>}
 
-      {hiddenCount>0&&(
-        <button onClick={()=>setShowUpcoming(v=>!v)} style={{width:"100%",marginBottom:12,padding:"8px",borderRadius:8,border:`1px dashed ${T.border}`,background:"transparent",color:T.muted,fontSize:12,cursor:"pointer"}}>
-          {showUpcoming?`Hide upcoming recurring entries`:`Show ${hiddenCount} upcoming recurring payment${hiddenCount!==1?"s":""} →`}
-        </button>
+      {tab==="settlements"&&(
+        <div>
+          {settlements.length===0&&(
+            <div style={{textAlign:"center",padding:"48px 0",color:T.muted}}>
+              <div style={{fontSize:36,marginBottom:10}}>📋</div>
+              <div style={{fontWeight:600}}>No settlements yet</div>
+              <div style={{fontSize:12,marginTop:6}}>Upload weekly or bi-weekly settlements from your carrier to keep them all in one place.</div>
+            </div>
+          )}
+          {[...settlements].sort((a,b)=>b.date.localeCompare(a.date)).map(s=>{
+            const unit=profile.units.find(u=>u.id===s.unitId);
+            const net=s.netPay||String(Number(s.grossPay||0)-Number(s.deductions||0));
+            return (
+              <Card key={s.id} style={{marginBottom:10}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontWeight:700,fontSize:14,color:T.green}}>{fmt$(net)}</div>
+                    <div style={{fontSize:12,color:T.muted,marginTop:2}}>{s.carrier||"—"}</div>
+                    {(s.periodStart||s.periodEnd)&&<div style={{fontSize:11,color:T.muted,marginTop:2}}>{s.periodStart} — {s.periodEnd}</div>}
+                    {unit&&<div style={{fontSize:11,color:T.accent,marginTop:2}}>{unit.identifier||unit.make||unit.id}</div>}
+                    <div style={{display:"flex",gap:8,marginTop:4,flexWrap:"wrap",fontSize:11,color:T.muted}}>
+                      {s.grossPay&&<span>Gross: {fmt$(s.grossPay)}</span>}
+                      {s.deductions&&<span>Deductions: {fmt$(s.deductions)}</span>}
+                      {(s.attachments||[]).length>0&&<span>📎 {s.attachments.length} doc{s.attachments.length!==1?"s":""}</span>}
+                    </div>
+                  </div>
+                  <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:6,marginLeft:10}}>
+                    <div style={{fontSize:11,color:T.muted}}>{s.date}</div>
+                    <div style={{display:"flex",gap:6}}>
+                      <button onClick={()=>{setEditSettlement({...s});setShowSettlementForm(true);}} style={{fontSize:11,padding:"2px 10px",borderRadius:4,border:`1px solid ${T.accent}`,background:"transparent",color:T.accent,cursor:"pointer"}}>Edit</button>
+                      <button onClick={()=>{if(window.confirm("Delete this settlement?"))setSettlements(ss=>ss.filter(x=>x.id!==s.id));}} style={{fontSize:11,padding:"2px 10px",borderRadius:4,border:`1px solid ${T.red}`,background:"transparent",color:T.red,cursor:"pointer"}}>Delete</button>
+                    </div>
+                  </div>
+                </div>
+                {s.notes&&<div style={{fontSize:11,color:T.muted,marginTop:8,borderTop:`1px solid ${T.border}`,paddingTop:8}}>{s.notes}</div>}
+              </Card>
+            );
+          })}
+        </div>
       )}
 
-      {/* Fuel quick-entry card — expense tab only */}
-      {tab==="expense"&&(
-        <Card style={{marginBottom:14,cursor:"pointer",border:`1px solid ${T.red}44`,background:`${T.red}09`}}
-          onClick={()=>{const last=fuelEntries[fuelEntries.length-1];setEditFuel({...DEF_FUEL_ENTRY,unitId:last?.unitId||profile.units[0]?.id||""});setShowFuelForm(true);}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-            <div>
-              <div style={{fontWeight:700,fontSize:14,color:T.text}}>Fuel & Fluids</div>
-              <div style={{fontSize:12,color:T.muted,marginTop:2}}>Diesel, DEF, Reefer, CNG, Propane — with receipt scan & IFTA tracking</div>
-              <div style={{fontSize:11,color:T.red,marginTop:4,fontWeight:600}}>{fuelEntries.length} fuel record{fuelEntries.length!==1?"s":""} total</div>
-            </div>
-            <div style={{width:36,height:36,borderRadius:18,background:T.red,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
-              <span style={{color:"#fff",fontSize:20,fontWeight:300,lineHeight:1}}>+</span>
-            </div>
-          </div>
-        </Card>
-      )}
-
-      {allEntries.length===0&&<div style={{textAlign:"center",padding:"48px 0",color:T.muted}}><div style={{fontSize:36,marginBottom:10}}>{tab==="income"?"💵":"💳"}</div><div style={{fontWeight:600}}>No {tab} entries yet</div></div>}
-
-      {allEntries.map(e=>(
-        <Card key={e.id} style={{marginBottom:8}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
-            <div style={{flex:1,minWidth:0}}>
-              <div style={{fontWeight:600,fontSize:13}}>{getCatLabel(e)}</div>
-              <div style={{fontSize:12,color:T.muted,marginTop:2}}>{e.type==="fuel"?`${e.stationName||"Fuel Station"} — ${e.stationState||""}`:(e.description||e.vendor||"—")}</div>
-              {e.loadNumber&&<div style={{fontSize:10,color:T.accent,marginTop:2}}>Load: {e.loadNumber}</div>}
-              <div style={{display:"flex",gap:8,marginTop:2,alignItems:"center"}}>
-                <span style={{fontSize:11,color:T.muted}}>{e.date}</span>
-                {e.type==="fuel"&&<Badge label="Fuel" color={T.accent}/>}
-                {e.recurring&&<Badge label="🔁 Recurring" color={T.muted}/>}
-                {(e.attachments||[]).length>0&&<span style={{fontSize:10,color:T.muted}}>📎 {e.attachments.length}</span>}
+      {tab!=="settlements"&&<>
+        {expiredSeries.map(group=>{
+          const last=group.reduce((a,b)=>a.date>b.date?a:b);
+          const label=last.description||last.vendor||last.categoryId||"Recurring payment";
+          return(
+            <div key={last.recurringId} style={{marginBottom:10,padding:"12px 14px",borderRadius:10,background:`${T.accent}15`,border:`1px solid ${T.accent}44`,display:"flex",justifyContent:"space-between",alignItems:"center",gap:10}}>
+              <div>
+                <div style={{fontSize:13,fontWeight:700,color:T.text}}>🔁 {label}</div>
+                <div style={{fontSize:11,color:T.muted,marginTop:2}}>Recurring series ended — continue {last.recurringFreq||"Monthly"}?</div>
+              </div>
+              <div style={{display:"flex",gap:6,flexShrink:0}}>
+                <button onClick={()=>renewSeries(group)} style={{fontSize:11,padding:"4px 12px",borderRadius:6,border:`1px solid ${T.accent}`,background:T.accent,color:"#fff",cursor:"pointer",fontWeight:600}}>Renew</button>
+                <button onClick={()=>setEntries(es=>es.map(e=>e.recurringId===last.recurringId?{...e,recurringId:null}:e))} style={{fontSize:11,padding:"4px 10px",borderRadius:6,border:`1px solid ${T.border}`,background:"transparent",color:T.muted,cursor:"pointer"}}>Dismiss</button>
               </div>
             </div>
-            <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:6,marginLeft:10}}>
-              <div style={{fontWeight:700,fontSize:16,color:e.type==="income"?T.green:T.red}}>
-                {e.type==="income"?"+":"-"}{fmt$(e.type==="fuel"?fuelTotal(e):e.amount)}
+          );
+        })}
+        {hiddenCount>0&&(
+          <button onClick={()=>setShowUpcoming(v=>!v)} style={{width:"100%",marginBottom:12,padding:"8px",borderRadius:8,border:`1px dashed ${T.border}`,background:"transparent",color:T.muted,fontSize:12,cursor:"pointer"}}>
+            {showUpcoming?`Hide upcoming recurring entries`:`Show ${hiddenCount} upcoming recurring payment${hiddenCount!==1?"s":""} →`}
+          </button>
+        )}
+        {allEntries.length===0&&<div style={{textAlign:"center",padding:"48px 0",color:T.muted}}><div style={{fontSize:36,marginBottom:10}}>{tab==="income"?"💵":"💳"}</div><div style={{fontWeight:600}}>No {tab} entries yet</div></div>}
+        {allEntries.map(e=>(
+          <Card key={e.id} style={{marginBottom:8}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{fontWeight:600,fontSize:13}}>{getCatLabel(e)}</div>
+                <div style={{fontSize:12,color:T.muted,marginTop:2}}>{e.type==="fuel"?`${e.stationName||"Fuel Station"} — ${e.stationState||""}`:(e.description||e.vendor||"—")}</div>
+                {e.loadNumber&&<div style={{fontSize:10,color:T.accent,marginTop:2}}>Load: {e.loadNumber}</div>}
+                <div style={{display:"flex",gap:8,marginTop:2,alignItems:"center"}}>
+                  <span style={{fontSize:11,color:T.muted}}>{e.date}</span>
+                  {e.type==="fuel"&&<Badge label="Fuel" color={T.accent}/>}
+                  {e.recurring&&<Badge label="🔁 Recurring" color={T.muted}/>}
+                  {e.reconciled&&<Badge label="✓ Reconciled" color="#22a06b"/>}
+                  {(e.attachments||[]).length>0&&<span style={{fontSize:10,color:T.muted}}>📎 {e.attachments.length}</span>}
+                </div>
               </div>
-              <div style={{display:"flex",gap:6}}>
-                <button onClick={()=>{if(e.type==="fuel"){setEditFuel({...e});setShowFuelForm(true);}else{setEditEntry({...e});setShowForm(true);}}} style={{fontSize:11,padding:"2px 10px",borderRadius:4,border:`1px solid ${T.accent}`,background:"transparent",color:T.accent,cursor:"pointer"}}>Edit</button>
-                <button onClick={()=>{
-                  if(e.recurringId){
-                    const choice=window.confirm("Delete future recurring entries too?\n\nOK = Delete this + all future entries in this series\nCancel = Delete only this entry");
-                    if(choice===null)return;
-                    if(choice){
-                      setEntries(es=>es.filter(x=>!(x.recurringId===e.recurringId&&x.date>=e.date)));
+              <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:6,marginLeft:10}}>
+                <div style={{fontWeight:700,fontSize:16,color:e.type==="income"?T.green:T.red}}>
+                  {e.type==="income"?"+":"-"}{fmt$(e.type==="fuel"?fuelTotal(e):e.amount)}
+                </div>
+                <div style={{display:"flex",gap:6}}>
+                  <button onClick={()=>{
+                    if(e.type==="fuel"){setFuelEntries(es=>es.map(x=>x.id===e.id?{...x,reconciled:!x.reconciled}:x));}
+                    else{setEntries(es=>es.map(x=>x.id===e.id?{...x,reconciled:!x.reconciled}:x));}
+                  }} style={{fontSize:11,padding:"2px 8px",borderRadius:4,border:`1px solid #22a06b`,background:e.reconciled?"#22a06b":"transparent",color:e.reconciled?"#fff":"#22a06b",cursor:"pointer"}} title="Toggle reconciled">{e.reconciled?"✓":"○"}</button>
+                  <button onClick={()=>{if(e.type==="fuel"){setEditFuel({...e});setShowFuelForm(true);}else{setEditEntry({...e});setShowForm(true);}}} style={{fontSize:11,padding:"2px 10px",borderRadius:4,border:`1px solid ${T.accent}`,background:"transparent",color:T.accent,cursor:"pointer"}}>Edit</button>
+                  <button onClick={()=>{
+                    if(e.recurringId){
+                      const choice=window.confirm("Delete future recurring entries too?\n\nOK = Delete this + all future entries in this series\nCancel = Delete only this entry");
+                      if(choice===null)return;
+                      if(choice){setEntries(es=>es.filter(x=>!(x.recurringId===e.recurringId&&x.date>=e.date)));}
+                      else{setEntries(es=>es.filter(x=>x.id!==e.id));}
                     } else {
-                      setEntries(es=>es.filter(x=>x.id!==e.id));
+                      if(window.confirm("Delete this entry?")){ if(e.type==="fuel")setFuelEntries(es=>es.filter(x=>x.id!==e.id));else setEntries(es=>es.filter(x=>x.id!==e.id));}
                     }
-                  } else {
-                    if(window.confirm("Delete this entry?")){ if(e.type==="fuel")setFuelEntries(es=>es.filter(x=>x.id!==e.id));else setEntries(es=>es.filter(x=>x.id!==e.id));}
-                  }
-                }} style={{fontSize:11,padding:"2px 10px",borderRadius:4,border:`1px solid ${T.red}`,background:"transparent",color:T.red,cursor:"pointer"}}>Delete</button>
+                  }} style={{fontSize:11,padding:"2px 10px",borderRadius:4,border:`1px solid ${T.red}`,background:"transparent",color:T.red,cursor:"pointer"}}>Delete</button>
+                </div>
               </div>
             </div>
-          </div>
-        </Card>
-      ))}
+          </Card>
+        ))}
+      </>}
     </div>
   );
 }
 
 // ── MAINTENANCE LOG TAB ───────────────────────────────────────────────────────
-function MaintenanceTab({maintenance,setMaintenance,profile}) {
+function MaintenanceTab({maintenance,setMaintenance,profile,userId}) {
   const [showForm,setShowForm]=useState(false);
   const [editItem,setEditItem]=useState(null);
   const [filterUnit,setFilterUnit]=useState("all");
@@ -1459,7 +1873,7 @@ function MaintenanceTab({maintenance,setMaintenance,profile}) {
       <Card style={{marginBottom:14}}>
         <SecHdr title="Attachments"/>
         <div style={{fontSize:11,color:T.muted,marginBottom:8}}>Attach invoice, receipt, or photos of the work.</div>
-        <Attachments attachments={editItem.attachments||[]} onChange={v=>up("attachments",v)}/>
+        <Attachments attachments={editItem.attachments||[]} onChange={v=>up("attachments",v)} category="receipts" userId={userId}/>
       </Card>
 
       <Field label="Notes"><textarea value={editItem.notes||""} onChange={e=>up("notes",e.target.value)} rows={2} style={{resize:"vertical"}}/></Field>
@@ -1517,9 +1931,10 @@ function MaintenanceTab({maintenance,setMaintenance,profile}) {
 
 // ── DASHBOARD TAB ─────────────────────────────────────────────────────────────
 function DashboardTab({loads,entries,fuelEntries,maintenance,profile}) {
-  const [period,setPeriod]=useState("month");
-  const [selectedUnits,setSelectedUnits]=useState(["all"]);
   const now=new Date();
+  const [dateFrom,setDateFrom]=useState(new Date(now.getFullYear(),now.getMonth(),1).toISOString().slice(0,10));
+  const [dateTo,setDateTo]=useState(nowDate());
+  const [selectedUnits,setSelectedUnits]=useState(["all"]);
 
   // Fleet selector logic
   const allUnitIds=profile.units.map(u=>u.id);
@@ -1531,13 +1946,18 @@ function DashboardTab({loads,entries,fuelEntries,maintenance,profile}) {
   };
   const unitActive=id=>selectedUnits.includes("all")||selectedUnits.includes(id);
 
-  const inPeriod=dateStr=>{
-    if(!dateStr)return false; const d=new Date(dateStr);
-    if(period==="week"){const s=new Date(now);s.setDate(now.getDate()-7);return d>=s;}
-    if(period==="month")return d.getMonth()===now.getMonth()&&d.getFullYear()===now.getFullYear();
-    if(period==="quarter"){const q=Math.floor(now.getMonth()/3);return Math.floor(d.getMonth()/3)===q&&d.getFullYear()===now.getFullYear();}
-    return d.getFullYear()===now.getFullYear();
-  };
+  const inPeriod=dateStr=>!!dateStr&&dateStr>=dateFrom&&dateStr<=dateTo;
+
+  const dashQuickRanges=[
+    {l:"7 Days",fn:()=>{const s=new Date();s.setDate(s.getDate()-7);setDateFrom(s.toISOString().slice(0,10));setDateTo(nowDate());}},
+    {l:"MTD",   fn:()=>{const n=new Date();setDateFrom(new Date(n.getFullYear(),n.getMonth(),1).toISOString().slice(0,10));setDateTo(nowDate());}},
+    {l:"Q1",    fn:()=>{const y=now.getFullYear();setDateFrom(`${y}-01-01`);setDateTo(`${y}-03-31`);}},
+    {l:"Q2",    fn:()=>{const y=now.getFullYear();setDateFrom(`${y}-04-01`);setDateTo(`${y}-06-30`);}},
+    {l:"Q3",    fn:()=>{const y=now.getFullYear();setDateFrom(`${y}-07-01`);setDateTo(`${y}-09-30`);}},
+    {l:"Q4",    fn:()=>{const y=now.getFullYear();setDateFrom(`${y}-10-01`);setDateTo(`${y}-12-31`);}},
+    {l:"YTD",   fn:()=>{setDateFrom(`${now.getFullYear()}-01-01`);setDateTo(nowDate());}},
+    {l:"Prev Year",fn:()=>{const y=now.getFullYear()-1;setDateFrom(`${y}-01-01`);setDateTo(`${y}-12-31`);}},
+  ];
 
   const fuelTotal=fe=>FUEL_TYPES.reduce((s,ft)=>s+(fe.fuelLines?.[ft]?.on?(Number(fe.fuelLines[ft].total)||0):0),0);
   const calcPay=l=>{
@@ -1636,29 +2056,33 @@ function DashboardTab({loads,entries,fuelEntries,maintenance,profile}) {
   return (
     <div style={{padding:"16px 0"}}>
 
-      {/* View selector dropdown */}
-      <Card style={{marginBottom:14,padding:"12px 14px"}}>
-        <label>Viewing</label>
+      {/* Unit / Company selector */}
+      <Card style={{marginBottom:10,padding:"10px 14px"}}>
+        <label style={{marginBottom:4,display:"block"}}>Viewing</label>
         <select
           value={selectedUnits.includes("all")?"all":selectedUnits[selectedUnits.length-1]||"all"}
-          onChange={e=>{
-            const val=e.target.value;
-            if(val==="all"){setSelectedUnits(["all"]);}
-            else{setSelectedUnits([val]);}
-          }}
+          onChange={e=>{const val=e.target.value;val==="all"?setSelectedUnits(["all"]):setSelectedUnits([val]);}}
           style={{marginBottom:0}}
         >
-          <option value="all">Company</option>
+          <option value="all">Entire Company</option>
           {[...profile.units].sort((a,b)=>(a.identifier||a.make||"").localeCompare(b.identifier||b.make||"",undefined,{numeric:true})).map(u=><option key={u.id} value={u.id}>Unit {u.identifier||u.make||u.id}</option>)}
         </select>
       </Card>
 
-      {/* Period selector */}
-      <div style={{display:"flex",gap:6,marginBottom:14}}>
-        {[{id:"week",l:"7 Days"},{id:"month",l:"Month"},{id:"quarter",l:"Quarter"},{id:"year",l:"Year"}].map(p=>(
-          <button key={p.id} onClick={()=>setPeriod(p.id)} style={{flex:1,padding:"7px 4px",borderRadius:8,fontSize:11,fontWeight:700,background:period===p.id?T.accent:T.card,color:period===p.id?"#fff":T.muted,border:`1px solid ${period===p.id?T.accent:T.border}`}}>{p.l}</button>
+      {/* Quick-range pills */}
+      <div style={{display:"flex",gap:6,overflowX:"auto",marginBottom:8,paddingBottom:2}}>
+        {dashQuickRanges.map(r=>(
+          <button key={r.l} onClick={r.fn} style={{whiteSpace:"nowrap",padding:"6px 13px",borderRadius:20,fontSize:11,fontWeight:600,background:T.card,color:T.muted,border:`1px solid ${T.border}`,flexShrink:0}}>{r.l}</button>
         ))}
       </div>
+
+      {/* Custom date range */}
+      <Card style={{marginBottom:14,padding:"10px 14px"}}>
+        <Row2>
+          <Field label="From"><input type="date" value={dateFrom} onChange={e=>setDateFrom(e.target.value)}/></Field>
+          <Field label="To"><input type="date" value={dateTo} onChange={e=>setDateTo(e.target.value)}/></Field>
+        </Row2>
+      </Card>
 
       {/* Maintenance alert */}
       {upcomingMaint.length>0&&(
@@ -2248,7 +2672,9 @@ export default function RigBooks() {
   const [entries,setEntries]=useState([]);
   const [fuelEntries,setFuelEntries]=useState([]);
   const [maintenance,setMaintenance]=useState([]);
+  const [settlements,setSettlements]=useState([]);
   const [syncing,setSyncing]=useState(false);
+  const [syncError,setSyncError]=useState("");
   const [dataLoaded,setDataLoaded]=useState(false);
   const saveTimer=useRef(null);
 
@@ -2284,6 +2710,7 @@ export default function RigBooks() {
         setEntries(data.entries||[]);
         setFuelEntries(data.fuel||[]);
         setMaintenance(data.maintenance||[]);
+        setSettlements(data.settlements||[]);
       }
       setDataLoaded(true);
     })();
@@ -2291,22 +2718,37 @@ export default function RigBooks() {
 
   // Use refs to always have current values in the debounced save
   const latestData=useRef({});
-  latestData.current={profile,loads,entries,fuelEntries,maintenance};
+  latestData.current={profile,loads,entries,fuelEntries,maintenance,settlements};
+
+  // Strip any legacy base64 data before cloud save — new files use storage paths only.
+  const stripAttachments=items=>items.map(item=>({
+    ...item,
+    attachments:(item.attachments||[]).map(({data:_omit,...rest})=>rest),
+  }));
 
   useEffect(()=>{
     if(!dataLoaded||!session?.user)return;
     clearTimeout(saveTimer.current);
     saveTimer.current=setTimeout(async()=>{
-      setSyncing(true);
-      const {profile,loads,entries,fuelEntries,maintenance}=latestData.current;
-      await supabase.from("user_data").upsert({
+      setSyncing(true); setSyncError("");
+      const {profile,loads,entries,fuelEntries,maintenance,settlements}=latestData.current;
+      const {error}=await supabase.from("user_data").upsert({
         id:session.user.id,
-        profile,loads,entries,fuel:fuelEntries,maintenance,
+        profile,
+        loads:stripAttachments(loads),
+        entries:stripAttachments(entries),
+        fuel:stripAttachments(fuelEntries),
+        maintenance:stripAttachments(maintenance),
+        settlements:stripAttachments(settlements),
         updated_at:new Date().toISOString(),
       });
+      if(error){
+        setSyncError("Save failed — check connection.");
+        console.error("Supabase save error:",error);
+      }
       setSyncing(false);
     },1500);
-  },[profile,loads,entries,fuelEntries,maintenance,dataLoaded,session?.user?.id]);
+  },[profile,loads,entries,fuelEntries,maintenance,settlements,dataLoaded,session?.user?.id]);
 
   const signOut=async()=>{await supabase.auth.signOut();setDataLoaded(false);};
 
@@ -2384,13 +2826,15 @@ export default function RigBooks() {
       <div style={{maxWidth:480,margin:"0 auto",minHeight:"100vh",display:"flex",flexDirection:"column",background:T.bg}}>
         <div style={{padding:"10px 16px 10px",borderBottom:`1px solid ${T.border}`,background:T.surface,position:"sticky",top:0,zIndex:100}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-            <div>
-              <img src={LOGO_URI} alt="The Rig Ledger" style={{height:40,width:"auto",display:"block"}}/>
-              {profile.companyName&&<div style={{fontSize:11,color:T.muted,marginTop:3}}>{profile.companyName}</div>}
-            </div>
-            <div style={{fontSize:11,color:T.muted,textAlign:"right"}}>
-              <div style={{display:"flex",alignItems:"center",gap:8,justifyContent:"flex-end"}}>
+            <img src={LOGO_URI} alt="The Rig Ledger" style={{height:40,width:"auto",display:"block"}}/>
+            <div style={{textAlign:"right"}}>
+              {profile.companyName&&<div style={{fontSize:14,fontWeight:700,color:T.text,lineHeight:1.2}}>{profile.companyName}</div>}
+              {profile.companyAddress&&<div style={{fontSize:11,color:T.muted,marginTop:1}}>{profile.companyAddress}</div>}
+              {(profile.companyCity||profile.companyState)&&<div style={{fontSize:11,color:T.muted}}>{[profile.companyCity,profile.companyState].filter(Boolean).join(", ")}</div>}
+              {profile.bizPhone&&<div style={{fontSize:11,color:T.muted}}>{profile.bizPhone}</div>}
+              <div style={{display:"flex",alignItems:"center",gap:8,justifyContent:"flex-end",marginTop:3}}>
                 {syncing&&<span style={{fontSize:10,color:T.accent}}>Syncing…</span>}
+                {!syncing&&syncError&&<span style={{fontSize:10,color:T.red,fontWeight:700}} title={syncError}>⚠️ Save failed</span>}
                 <button onClick={signOut} style={{fontSize:10,color:T.muted,background:"none",padding:0,cursor:"pointer",textDecoration:"underline"}}>Sign Out</button>
               </div>
             </div>
@@ -2399,11 +2843,11 @@ export default function RigBooks() {
 
         <div style={{flex:1,overflowY:"auto",padding:"0 16px 88px"}}>
           {tab==="dashboard"&&<DashboardTab loads={loads} entries={entries} fuelEntries={fuelEntries} maintenance={maintenance} profile={profile}/>}
-          {tab==="loads"&&<LoadsTab loads={loads} setLoads={setLoads} profile={profile}/>}
-          {tab==="ledger"&&<LedgerTab entries={entries} setEntries={setEntries} loads={loads} profile={profile} fuelEntries={fuelEntries} setFuelEntries={setFuelEntries}/>}
-          {tab==="maint"&&<MaintenanceTab maintenance={maintenance} setMaintenance={setMaintenance} profile={profile}/>}
+          {tab==="loads"&&<LoadsTab loads={loads} setLoads={setLoads} profile={profile} userId={session?.user?.id}/>}
+          {tab==="ledger"&&<LedgerTab entries={entries} setEntries={setEntries} loads={loads} profile={profile} fuelEntries={fuelEntries} setFuelEntries={setFuelEntries} userId={session?.user?.id} settlements={settlements} setSettlements={setSettlements}/>}
+          {tab==="maint"&&<MaintenanceTab maintenance={maintenance} setMaintenance={setMaintenance} profile={profile} userId={session?.user?.id}/>}
           {tab==="reports"&&<ReportsTab loads={loads} entries={entries} fuelEntries={fuelEntries} maintenance={maintenance} profile={profile}/>}
-          {tab==="profile"&&<ProfileTab profile={profile} setProfile={setProfile}/>}
+          {tab==="profile"&&<ProfileTab profile={profile} setProfile={setProfile} userId={session?.user?.id}/>}
         </div>
 
         <div style={{position:"fixed",bottom:0,left:"50%",transform:"translateX(-50%)",width:"100%",maxWidth:480,background:T.surface,borderTop:`1px solid ${T.border}`,display:"flex",padding:"6px 0 10px",zIndex:100}}>
